@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | An ExpandType instance for DsMonad.  This allows the Context
 -- module to be used with m ~ DsMonad.
-module Language.Haskell.TH.Expand () where
+module Expand () where
 
 import Control.Applicative ((<$>))
 import Control.Monad.State (StateT)
@@ -13,7 +13,6 @@ import qualified Language.Haskell.TH.Desugar.Expand as DS (expandType)
 import Language.Haskell.TH.Desugar.Sweeten as DS (typeToTH)
 
 instance DsMonad m => ExpandType m where
-    -- expandType :: (Quasi m, DS.DsMonad m) => Type -> m Type
     expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expandType)
 
 -- This lets Context wrap some state around m and still use DsMonad.

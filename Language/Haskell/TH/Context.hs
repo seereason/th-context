@@ -27,7 +27,7 @@ import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.TH.Instances ()
+import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
 -- Extend the Quasi type to require a function for expanding a TH Type.
 class ExpandType m where
