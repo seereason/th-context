@@ -16,6 +16,7 @@ description:        Use these functions to decide an a not-quite naive fashion
                     whether an instance already exists that satisfies a given
                     context.  This can be used to decide whether an instance
                     needs to be generated, as in th-reify-many.
+extra-source-files: test/Expand.hs
 
 library
   build-depends:    base >= 4.2 && < 5,
@@ -23,7 +24,20 @@ library
                     mtl, syb, containers, th-desugar >= 1.5, th-orphans >= 0.9
   ghc-options:      -Wall
   exposed-modules:  Language.Haskell.TH.Context
-                    Language.Haskell.TH.Expand
+  default-language: Haskell2010
+
+test-suite th-context-tests
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Tests.hs
+  build-depends:    array,
+                    base,
+                    containers,
+                    hspec,
+                    mtl,
+                    template-haskell,
+                    th-context,
+                    th-desugar
   default-language: Haskell2010
 
 source-repository head
