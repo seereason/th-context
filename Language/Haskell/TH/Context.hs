@@ -15,6 +15,7 @@ module Language.Haskell.TH.Context
     , testContext
     , expandTypes
     , testPred
+    , ExpandType(expandType)
     ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -26,10 +27,11 @@ import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.TH.Desugar as DS (DsMonad(localDeclarations), dsType)
-import qualified Language.Haskell.TH.Desugar.Expand as DS (expandType)
-import Language.Haskell.TH.Desugar.Sweeten as DS (typeToTH)
 import Language.Haskell.TH.Instances ()
+
+-- Extend the Quasi type to require a function for expanding a TH Type.
+class ExpandType m where
+    expandType :: Type -> m Type
 
 instance Quasi m => Quasi (StateT s m) where
   qNewName  	    = lift . qNewName
@@ -51,13 +53,10 @@ instance Quasi m => Quasi (StateT s m) where
   qPutQ             = lift . qPutQ
 #endif
 
-instance DsMonad m => DsMonad (StateT s m) where
-    localDeclarations = lift localDeclarations
-
 -- | Look up all the instances that match the given class name and
 -- argument types, return only the ones (if any) that satisfy all the
 -- instance context predicates.
-instances :: (DS.DsMonad m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> m [InstanceDec]
+instances :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> m [InstanceDec]
 -- Ask for matching instances for this list of types, then see whether
 -- any of them can be unified with the instance context.
 instances cls argTypes =
@@ -79,7 +78,7 @@ instances cls argTypes =
 -- context we have computed so far.  We have already added a ClassP predicate
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
-testInstance :: (DS.DsMonad m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> InstanceDec -> m Bool
+testInstance :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> InstanceDec -> m Bool
 testInstance cls argTypes (InstanceD newContext instType _) = do
   testContext (instancePredicates (reverse argTypes) instType ++ newContext)
     where
@@ -100,13 +99,13 @@ testInstance _ _ x = error $ "Unexpected InstanceDec.  If this happens there mus
 -- left of the @=>@ in a Haskell declaration.  These can either be
 -- @ClassP@ values which represent superclasses, or @EqualP@ values
 -- which represent uses of the @~@ operator.
-testContext :: (DS.DsMonad m, MonadState (Map Pred [InstanceDec]) m) => [Pred] -> m Bool
+testContext :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => [Pred] -> m Bool
 testContext context =
     and <$> (mapM consistent =<< simplifyContext context)
 
 -- | Perform type expansion on the predicates, then simplify using
 -- variable substitution and eliminate vacuous equivalences.
-simplifyContext :: (DS.DsMonad m, MonadState (Map Pred [InstanceDec]) m) => [Pred] -> m [Pred]
+simplifyContext :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => [Pred] -> m [Pred]
 simplifyContext context =
     do (expanded :: [Pred]) <- expandTypes context
        let (context' :: [Pred]) = concat $ map unify expanded
@@ -121,11 +120,8 @@ testPredicate context (EqualP a v@(VarT _)) = everywhere (mkT (\ x -> if x == v 
 testPredicate context p@(EqualP a b) | a == b = filter (/= p) context
 testPredicate context _ = context
 
-expandTypes :: (DsMonad m, Data a) => a -> m a
+expandTypes :: (Quasi m, ExpandType m, Data a) => a -> m a
 expandTypes = everywhereM (mkM expandType)
-
-expandType :: (Quasi m, DS.DsMonad m) => Type -> m Type
-expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expandType)
 
 -- | Unify the two arguments of an EqualP predicate, return a list of
 -- simpler predicates associating types with a variables.
@@ -136,7 +132,7 @@ unify (EqualP a@(VarT _) b) = [EqualP a b]
 unify (EqualP a b@(VarT _)) = [EqualP a b]
 unify x = [x]
 
-consistent :: (DS.DsMonad m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
+consistent :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
 consistent (ClassP cls args) = (not . null) <$> instances cls args -- Do we need additional context here?
 consistent (EqualP (AppT a b) (AppT c d)) = (&&) <$> consistent (EqualP a c) <*> consistent (EqualP b d) -- I'm told this is incorrect in the presence of type functions
 consistent (EqualP (VarT _) _) = return True
@@ -145,7 +141,7 @@ consistent (EqualP a b) | a == b = return True
 consistent (EqualP _ _) = return False
 
 -- testPred :: MonadMIMO m => Pred -> m Bool
-testPred :: (DsMonad m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
+testPred :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
 testPred predicate = do
   -- Is the instance already in the Q monad?
   flag <- testContext [predicate]
