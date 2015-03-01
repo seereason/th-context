@@ -165,8 +165,8 @@ consistent (AppT (AppT EqualityT _) _) = return False
 consistent (AppT cls arg) =
     consistent' cls [arg]
     where
-      consistent' (VarT cls) args = (not . null) <$> instances cls args
-      consistent' (AppT cls arg) args = consistent' cls (arg : args)
+      consistent' (VarT name) args = (not . null) <$> instances name args
+      consistent' (AppT cls' arg) args = consistent' cls' (arg : args)
       consistent' _ _ = return False
 #else
 consistent (ClassP cls args) = (not . null) <$> instances cls args -- Do we need additional context here?
