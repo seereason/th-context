@@ -34,14 +34,14 @@ class ExpandType m where
     expandType :: Type -> m Type
 
 instance Quasi m => Quasi (StateT s m) where
-  qNewName  	    = lift . qNewName
-  qReport a b  	    = lift $ qReport a b
+  qNewName          = lift . qNewName
+  qReport a b       = lift $ qReport a b
   qRecover m1 m2    = StateT $ \ s -> runStateT m1 s `qRecover` runStateT m2 s
   qLookupName a b   = lift $ qLookupName a b
-  qReify    	    = lift . qReify
+  qReify            = lift . qReify
   qReifyInstances a b = lift $ qReifyInstances a b
-  qLocation 	    = lift qLocation
-  qRunIO    	    = lift . qRunIO
+  qLocation         = lift qLocation
+  qRunIO            = lift . qRunIO
   qAddDependentFile = lift . qAddDependentFile
 #if MIN_VERSION_template_haskell(2,9,0)
   qReifyRoles       = lift . qReifyRoles
