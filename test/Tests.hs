@@ -1,15 +1,17 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Main where
 
-import Control.Monad.State (evalStateT)
+import Control.Monad.State (evalStateT, runStateT)
 import Data.Array.Base
-import Data.List (intercalate)
-import Data.Set (fromList)
+import Data.List as List (intercalate, map)
+import Data.Map as Map (Map, fromList, toList, map, mapKeys, empty)
+import Data.Set as Set (Set, fromList, toList)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (instances, testContext)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
-import Language.Haskell.TH.Syntax (lift, Quasi(qReifyInstances))
+import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
 import Test.Hspec hiding (runIO)
 import Expand
 
@@ -25,9 +27,9 @@ main = hspec $ do
      typ `shouldBe` ConT ''Int
 
   it "can find all the Eq instances" $ do
-     fromList $(do insts <- qReifyInstances ''Eq [VarT (mkName "a")]
-                   lift (map (unwords . words . pprint) insts))
-          `shouldBe` (fromList
+     Set.fromList $(do insts <- qReifyInstances ''Eq [VarT (mkName "a")]
+                       lift (List.map (unwords . words . pprint) insts))
+          `shouldBe` (Set.fromList
                       ["instance (GHC.Arr.Ix ix_0, GHC.Classes.Eq e_1, Data.Array.Base.IArray Data.Array.Base.UArray e_1) => GHC.Classes.Eq (Data.Array.Base.UArray ix_0 e_1)",
                        "instance (GHC.Classes.Eq a_0, GHC.Classes.Eq b_1) => GHC.Classes.Eq ((a_0, b_1))",
                        "instance (GHC.Classes.Eq a_0, GHC.Classes.Eq b_1, GHC.Classes.Eq c_2) => GHC.Classes.Eq ((a_0, b_1, c_2))",
@@ -95,7 +97,6 @@ main = hspec $ do
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Phases",
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.PkgName",
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Pragma",
-                       "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Pred",
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Range",
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Role",
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.RuleBndr",
@@ -109,7 +110,6 @@ main = hspec $ do
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Type",
                        "instance GHC.Classes.Eq Test.Hspec.Core.Runner.Summary",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Control.Applicative.ZipList a_0)",
-                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Maybe.Maybe a_0)",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Monoid.Dual a_0)",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Monoid.First a_0)",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Monoid.Last a_0)",
@@ -117,12 +117,41 @@ main = hspec $ do
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Monoid.Sum a_0)",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Set.Base.Set a_0)",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (GHC.Real.Ratio a_0)",
-                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq ([a_0])"])
+                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq ([a_0])",
+#if MIN_VERSION_template_haskell(2,10,0)
+                       "instance (GHC.Arr.Ix i_0, GHC.Classes.Eq e_1) => GHC.Classes.Eq (GHC.Arr.Array i_0 e_1)",
+                       "instance (GHC.Classes.Eq a_0, GHC.Classes.Eq b_1) => GHC.Classes.Eq (Data.Either.Either a_0 b_1)",
+                       "instance GHC.Classes.Eq (GHC.Arr.STArray s_0 i_1 e_2)",
+                       "instance GHC.Classes.Eq (f_0 a_1) => GHC.Classes.Eq (Data.Monoid.Alt f_0 a_1)",
+                       "instance GHC.Classes.Eq GHC.Int.Int16",
+                       "instance GHC.Classes.Eq GHC.Int.Int32",
+                       "instance GHC.Classes.Eq GHC.Int.Int64",
+                       "instance GHC.Classes.Eq GHC.Int.Int8",
+                       "instance GHC.Classes.Eq GHC.Integer.Type.BigNat",
+                       "instance GHC.Classes.Eq GHC.Natural.Natural",
+                       "instance GHC.Classes.Eq GHC.Word.Word16",
+                       "instance GHC.Classes.Eq GHC.Word.Word32",
+                       "instance GHC.Classes.Eq GHC.Word.Word64",
+                       "instance GHC.Classes.Eq GHC.Word.Word8",
+                       "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.ModuleInfo",
+                       "instance GHC.Classes.Eq Test.Hspec.Core.Example.Result",
+                       "instance GHC.Classes.Eq Text.PrettyPrint.HughesPJ.Doc",
+                       "instance GHC.Classes.Eq Text.PrettyPrint.HughesPJ.Mode",
+                       "instance GHC.Classes.Eq Text.PrettyPrint.HughesPJ.Style",
+                       "instance GHC.Classes.Eq Text.PrettyPrint.HughesPJ.TextDetails",
+                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Control.Applicative.Const a_0 b_1)",
+                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (GHC.Base.Maybe a_0)"
+#else
+                       "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Pred",
+                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Maybe.Maybe a_0)"
+#endif
+                      ])
 
   it "can match all the Enum instances" $ do
-     fromList $(do insts <- evalStateT (instances ''Enum [VarT (mkName "a")]) mempty
-                   lift (map (unwords . words . pprint) insts))
-          `shouldBe` (fromList
+     (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
+             $(do (insts, mp) <- runStateT (instances ''Enum [VarT (mkName "a")]) mempty
+                  lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
+          `shouldBe` (Set.fromList
                       ["instance GHC.Enum.Enum GHC.Types.Double",
                       "instance GHC.Enum.Enum GHC.Types.Float",
                       "instance GHC.Real.Integral a_0 => GHC.Enum.Enum (GHC.Real.Ratio a_0)",
@@ -132,12 +161,30 @@ main = hspec $ do
                       "instance GHC.Enum.Enum GHC.Types.Char",
                       "instance GHC.Enum.Enum GHC.Types.Int",
                       "instance GHC.Enum.Enum GHC.Integer.Type.Integer",
-                      "instance GHC.Enum.Enum GHC.Types.Ordering"])
+                      "instance GHC.Enum.Enum GHC.Types.Ordering"],
+                      Map.fromList [("GHC.Enum.Enum a",
+                                     Set.fromList
+                                     ["instance GHC.Enum.Enum GHC.Types.Double",
+                                      "instance GHC.Enum.Enum GHC.Types.Float",
+                                      "instance GHC.Real.Integral a_0 => GHC.Enum.Enum (GHC.Real.Ratio a_0)",
+                                      "instance GHC.Enum.Enum GHC.Types.Word",
+                                      "instance GHC.Enum.Enum ()",
+                                      "instance GHC.Enum.Enum GHC.Types.Bool",
+                                      "instance GHC.Enum.Enum GHC.Types.Char",
+                                      "instance GHC.Enum.Enum GHC.Types.Int",
+                                      "instance GHC.Enum.Enum GHC.Integer.Type.Integer",
+                                      "instance GHC.Enum.Enum GHC.Types.Ordering"]),
+                                    ("GHC.Real.Integral a_0",
+                                     Set.fromList
+                                     ["instance GHC.Real.Integral GHC.Types.Int",
+                                      "instance GHC.Real.Integral GHC.Integer.Type.Integer",
+                                      "instance GHC.Real.Integral GHC.Types.Word"])])
 
   it "can handle multi param class IArray" $ do
-     fromList $(do insts <- evalStateT (instances ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
-                   lift (map (unwords . words . pprint) insts))
-          `shouldBe` (fromList
+     (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
+             $(do (insts, mp) <- runStateT (instances ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
+                  lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
+          `shouldBe` (Set.fromList
                       ["instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Bool",
                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Char",
                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Double",
@@ -154,4 +201,23 @@ main = hspec $ do
                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word16",
                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word32",
                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word64",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"])
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"],
+                      Map.fromList [("Data.Array.Base.IArray Data.Array.Base.UArray a",
+                                     Set.fromList
+                                     ["instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Bool",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Char",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Double",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Float",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.FunPtr a_0)",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Int",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int16",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int32",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int64",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int8",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.Ptr a_0)",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Stable.StablePtr a_0)",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Word",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word16",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word32",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word64",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"])])
