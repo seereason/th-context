@@ -167,7 +167,7 @@ consistent (AppT cls arg) =
     where
       consistent' (VarT cls) args = (not . null) <$> instances cls args
       consistent' (AppT cls arg) args = consistent' cls (arg : args)
-      consistent' _ _ = False
+      consistent' _ _ = return False
 #else
 consistent (ClassP cls args) = (not . null) <$> instances cls args -- Do we need additional context here?
 consistent (EqualP (AppT a b) (AppT c d)) =
