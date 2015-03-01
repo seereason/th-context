@@ -59,8 +59,12 @@ instance Quasi m => Quasi (StateT s m) where
 instances :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> m [InstanceDec]
 -- Ask for matching instances for this list of types, then see whether
 -- any of them can be unified with the instance context.
-instances cls argTypes =
-    do p <- expandTypes (ClassP cls argTypes)
+instances cls argTypes = do
+#if MIN_VERSION_template_haskell(2,10,0)
+       p <- expandTypes (foldl AppT (ConT cls) argTypes)
+#else
+       p <- expandTypes (ClassP cls argTypes)
+#endif
        mp <- get
        case Map.lookup p mp of
          Just x -> return x
@@ -137,10 +141,10 @@ expandTypes = everywhereM (mkM expandType)
 -- simpler predicates associating types with a variables.
 unify :: Pred -> [Pred]
 #if MIN_VERSION_template_haskell(2,10,0)
-unify (AppT (AppT EqualityT (AppT a b)) (AppT c d)) = unify (EqualP a c) ++ unify (EqualP b d)
+unify (AppT (AppT EqualityT (AppT a b)) (AppT c d)) = unify (AppT (AppT EqualityT a) c) ++ unify (AppT (AppT EqualityT b) d)
 unify (AppT (AppT EqualityT (ConT a)) (ConT b)) | a == b = []
-unify (AppT (AppT EqualityT a@(VarT _)) b) = [EqualP a b]
-unify (AppT (AppT EqualityT a) b@(VarT _)) = [EqualP a b]
+unify (AppT (AppT EqualityT a@(VarT _)) b) = [AppT (AppT EqualityT a) b]
+unify (AppT (AppT EqualityT a) b@(VarT _)) = [AppT (AppT EqualityT a) b]
 #else
 unify (EqualP (AppT a b) (AppT c d)) = unify (EqualP a c) ++ unify (EqualP b d)
 unify (EqualP (ConT a) (ConT b)) | a == b = []
@@ -153,7 +157,7 @@ consistent :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => 
 #if MIN_VERSION_template_haskell(2,10,0)
 consistent (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
     -- I'm told this is incorrect in the presence of type functions
-    (&&) <$> consistent (EqualP a c) <*> consistent (EqualP b d)
+    (&&) <$> consistent (AppT (AppT EqualityT a) c) <*> consistent (AppT (AppT EqualityT b) d)
 consistent (AppT (AppT EqualityT (VarT _)) _) = return True
 consistent (AppT (AppT EqualityT _) (VarT _)) = return True
 consistent (AppT (AppT EqualityT a) b) | a == b = return True
