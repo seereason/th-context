@@ -83,7 +83,11 @@ testInstance cls argTypes (InstanceD newContext instType _) = do
   testContext (instancePredicates (reverse argTypes) instType ++ newContext)
     where
       instancePredicates :: [Type] -> Type -> [Pred]
+#if MIN_VERSION_template_haskell(2,10,0)
+      instancePredicates (x : xs) (AppT l r) = AppT (AppT EqualityT x) r : instancePredicates xs l
+#else
       instancePredicates (x : xs) (AppT l r) = EqualP x r : instancePredicates xs l
+#endif
       instancePredicates [] (ConT cls') | cls == cls' = []
       instancePredicates _ _ = error $ (unlines ["testInstance: Failure unifying instance with arguments.  This should never",
                                                  "happen because qReifyInstance returned this instance for these exact arguments:",
@@ -115,9 +119,15 @@ simplifyContext context =
 -- | Try to simplify the context by eliminating of one of the predicates.
 -- If we succeed start again with the new context.
 testPredicate :: [Pred] -> Pred -> [Pred]
+#if MIN_VERSION_template_haskell(2,10,0)
+testPredicate context (AppT (AppT EqualityT v@(VarT _)) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
+testPredicate context (AppT (AppT EqualityT a) v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
+testPredicate context p@(AppT (AppT EqualityT a) b) | a == b = filter (/= p) context
+#else
 testPredicate context (EqualP v@(VarT _) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
 testPredicate context (EqualP a v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
 testPredicate context p@(EqualP a b) | a == b = filter (/= p) context
+#endif
 testPredicate context _ = context
 
 expandTypes :: (Quasi m, ExpandType m, Data a) => a -> m a
@@ -126,19 +136,44 @@ expandTypes = everywhereM (mkM expandType)
 -- | Unify the two arguments of an EqualP predicate, return a list of
 -- simpler predicates associating types with a variables.
 unify :: Pred -> [Pred]
+#if MIN_VERSION_template_haskell(2,10,0)
+unify (AppT (AppT EqualityT (AppT a b)) (AppT c d)) = unify (EqualP a c) ++ unify (EqualP b d)
+unify (AppT (AppT EqualityT (ConT a)) (ConT b)) | a == b = []
+unify (AppT (AppT EqualityT a@(VarT _)) b) = [EqualP a b]
+unify (AppT (AppT EqualityT a) b@(VarT _)) = [EqualP a b]
+#else
 unify (EqualP (AppT a b) (AppT c d)) = unify (EqualP a c) ++ unify (EqualP b d)
 unify (EqualP (ConT a) (ConT b)) | a == b = []
 unify (EqualP a@(VarT _) b) = [EqualP a b]
 unify (EqualP a b@(VarT _)) = [EqualP a b]
+#endif
 unify x = [x]
 
 consistent :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
+#if MIN_VERSION_template_haskell(2,10,0)
+consistent (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
+    -- I'm told this is incorrect in the presence of type functions
+    (&&) <$> consistent (EqualP a c) <*> consistent (EqualP b d)
+consistent (AppT (AppT EqualityT (VarT _)) _) = return True
+consistent (AppT (AppT EqualityT _) (VarT _)) = return True
+consistent (AppT (AppT EqualityT a) b) | a == b = return True
+consistent (AppT (AppT EqualityT _) _) = return False
+consistent (AppT cls arg) =
+    consistent' cls [arg]
+    where
+      consistent' (VarT cls) args = (not . null) <$> instances cls args
+      consistent' (AppT cls arg) args = consistent' cls (arg : args)
+      consistent' _ _ = False
+#else
 consistent (ClassP cls args) = (not . null) <$> instances cls args -- Do we need additional context here?
-consistent (EqualP (AppT a b) (AppT c d)) = (&&) <$> consistent (EqualP a c) <*> consistent (EqualP b d) -- I'm told this is incorrect in the presence of type functions
+consistent (EqualP (AppT a b) (AppT c d)) =
+    -- I'm told this is incorrect in the presence of type functions
+    (&&) <$> consistent (EqualP a c) <*> consistent (EqualP b d)
 consistent (EqualP (VarT _) _) = return True
 consistent (EqualP _ (VarT _)) = return True
 consistent (EqualP a b) | a == b = return True
 consistent (EqualP _ _) = return False
+#endif
 
 -- testPred :: MonadMIMO m => Pred -> m Bool
 testPred :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
