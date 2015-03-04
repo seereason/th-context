@@ -2,16 +2,21 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Main where
 
+import Control.DeepSeq
 import Control.Monad.State (evalStateT, runStateT)
 import Data.Array.Base
+import Data.ByteString (ByteString)
 import Data.List as List (intercalate, map)
 import Data.Map as Map (Map, fromList, toList, map, mapKeys, empty)
 import Data.Set as Set (Set, fromList, toList)
+import Data.Text (Text)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (instances, testContext)
+import Language.Haskell.TH.Context (instances, testContext, missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
+import Language.Haskell.TH.ReifyMany
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
+import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
 import Expand
 
@@ -147,6 +152,26 @@ main = hspec $ do
 #endif
                       ])
 
+  -- Test the behavior of th-reify-many
+  it "can tell that there is an instance NFData Char" $
+     $(do insts <- qReifyInstances ''NFData [ConT ''Char]
+          lift $ List.map (unwords . words .pprint) insts) `shouldBe` (["instance Control.DeepSeq.NFData GHC.Types.Char"] :: [String])
+
+  it "can tell that there is no instance NFData ExitCode" $
+     $(do insts <- qReifyInstances ''NFData [ConT ''ExitCode]
+          lift $ List.map (unwords . words .pprint) insts) `shouldBe` ([] :: [String])
+
+  it "can see tell that instance hasn't been declared" $
+     $(missingInstances simpleMissingInstanceTest [d|instance NFData ExitCode|] >>= lift)
+          `shouldBe` False
+
+  it "doesn't mind if you mention an instance that was already declared" $
+     $(missingInstances simpleMissingInstanceTest [d|instance NFData Char|] >>= lift)
+          `shouldBe` True
+
+-- GHCs older than 7.10 that haven't been specially patched cannot deal with
+-- the unbound type variable a.
+#if __GLASGOW_HASKELL >= 710
   it "can match all the Enum instances" $ do
      (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
              $(do (insts, mp) <- runStateT (instances ''Enum [VarT (mkName "a")]) mempty
@@ -182,7 +207,10 @@ main = hspec $ do
 
   it "can handle multi param class IArray" $ do
      (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
-             $(do (insts, mp) <- runStateT (instances ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
+             -- Unquote the template haskell Q monad expression
+             $(do -- Run instances and save the result and the state monad result
+                  (insts, mp) <- runStateT (instances ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
+                  -- Convert to lists of text so we can lift out of Q
                   lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
           `shouldBe` (Set.fromList
                       ["instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Bool",
@@ -221,3 +249,4 @@ main = hspec $ do
                                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word32",
                                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word64",
                                       "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"])])
+#endif

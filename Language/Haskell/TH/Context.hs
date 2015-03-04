@@ -16,6 +16,8 @@ module Language.Haskell.TH.Context
     , expandTypes
     , testPred
     , ExpandType(expandType)
+    , missingInstances
+    , simpleMissingInstanceTest
     ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -25,6 +27,7 @@ import Control.Monad.Trans (lift)
 import Data.Generics (Data, everywhere, mkT, everywhereM, mkM)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert)
+import Data.Maybe (catMaybes)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
@@ -188,3 +191,24 @@ testPred predicate = do
     True -> return True
     -- Have we already generated and inserted the instance into the map in the state monad?
     False -> maybe False (not . null) <$> (Map.lookup <$> expandTypes predicate <*> get)
+
+-- | Apply a filter such as 'simpleMissingInstanceTest' to a list of
+-- instances, resulting in a non-overlapping list of instances.
+missingInstances :: Quasi m => (Dec -> m Bool) -> m [Dec] -> m [Dec]
+missingInstances test decs = decs >>= mapM (\ dec -> test dec >>= \ flag -> return $ if flag then Just dec else Nothing) >>= return . catMaybes
+
+-- | Return True if no instance matches the types (ignoring the instance context)
+simpleMissingInstanceTest :: Quasi m => Dec -> m Bool
+simpleMissingInstanceTest dec@(InstanceD _ typ _) =
+    case unfoldInstance typ of
+      Just (name, types) -> do
+        trace ("name: " ++ show name ++ ", types=" ++ show types) (return ())
+        insts <- qReifyInstances name types
+        trace ("insts: " ++ show (map pprint insts)) (return ())
+        return $ null insts
+      Nothing -> error $ "simpleMissingInstanceTest - invalid instance: " ++ pprint dec
+    where
+      unfoldInstance (ConT name) = Just (name, [])
+      unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
+      unfoldInstance _ = Nothing
+simpleMissingInstanceTest dec = error $ "simpleMissingInstanceTest - invalid instance: " ++ pprint dec

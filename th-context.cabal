@@ -30,12 +30,16 @@ test-suite th-context-tests
   main-is:          Tests.hs
   build-depends:    array,
                     base,
+                    bytestring,
                     containers,
+                    deepseq,
                     hspec,
                     mtl,
                     template-haskell,
+                    text,
                     th-context,
-                    th-desugar
+                    th-desugar,
+                    th-reify-many
   default-language: Haskell2010
 
 source-repository head
