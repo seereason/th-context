@@ -10,12 +10,12 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 module Language.Haskell.TH.Context
-    ( instances
+    ( ExpandType(expandType)
+    , expandTypes
     , testInstance
     , testContext
-    , expandTypes
+    , instances
     , testPred
-    , ExpandType(expandType)
     , missingInstances
     , simpleMissingInstanceTest
     ) where
@@ -31,10 +31,6 @@ import Data.Maybe (catMaybes)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
-
--- Extend the Quasi type to require a function for expanding a TH Type.
-class ExpandType m where
-    expandType :: Type -> m Type
 
 instance Quasi m => Quasi (StateT s m) where
   qNewName          = lift . qNewName
@@ -56,30 +52,20 @@ instance Quasi m => Quasi (StateT s m) where
   qPutQ             = lift . qPutQ
 #endif
 
--- | Look up all the instances that match the given class name and
--- argument types, return only the ones (if any) that satisfy all the
--- instance context predicates.
-instances :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> m [InstanceDec]
--- Ask for matching instances for this list of types, then see whether
--- any of them can be unified with the instance context.
-instances cls argTypes = do
-#if MIN_VERSION_template_haskell(2,10,0)
-       p <- expandTypes (foldl AppT (ConT cls) argTypes)
-#else
-       p <- expandTypes (ClassP cls argTypes)
-#endif
-       mp <- get
-       case Map.lookup p mp of
-         Just x -> return x
-         Nothing -> do
-           -- Add an entry with a bogus value to limit recursion on
-           -- the predicate we are currently testing
-           modify (Map.insert p [])
-           insts <- qReifyInstances cls argTypes
-           r <- filterM (testInstance cls argTypes) insts
-           -- Now insert the correct value into the map.
-           modify (Map.insert p r)
-           return r
+-- | Extend the Quasi class to require a function for expanding a TH Type.  The
+-- th-desugar package has a function that can be used to implement this, but I
+-- created the class to avoid becoming too tightly coupled with that package:
+-- @@
+--  import Language.Haskell.TH.Desugar as DS
+--  instance DsMonad m => ExpandType m where
+--    expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expandType)
+-- @@
+-- Extend the Quasi type to require a function for expanding a TH Type.
+class ExpandType m where
+    expandType :: Type -> m Type
+
+expandTypes :: (Quasi m, ExpandType m, Data a) => a -> m a
+expandTypes = everywhereM (mkM expandType)
 
 -- | Test one of the instances returned by qReifyInstances against the
 -- context we have computed so far.  We have already added a ClassP predicate
@@ -137,9 +123,6 @@ testPredicate context p@(EqualP a b) | a == b = filter (/= p) context
 #endif
 testPredicate context _ = context
 
-expandTypes :: (Quasi m, ExpandType m, Data a) => a -> m a
-expandTypes = everywhereM (mkM expandType)
-
 -- | Unify the two arguments of an EqualP predicate, return a list of
 -- simpler predicates associating types with a variables.
 unify :: Pred -> [Pred]
@@ -182,6 +165,31 @@ consistent (EqualP _ (VarT _)) = return True
 consistent (EqualP a b) | a == b = return True
 consistent (EqualP _ _) = return False
 #endif
+
+-- | Look up all the instances that match the given class name and
+-- argument types, return only the ones (if any) that satisfy all the
+-- instance context predicates.
+instances :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> m [InstanceDec]
+-- Ask for matching instances for this list of types, then see whether
+-- any of them can be unified with the instance context.
+instances cls argTypes = do
+#if MIN_VERSION_template_haskell(2,10,0)
+       p <- expandTypes (foldl AppT (ConT cls) argTypes)
+#else
+       p <- expandTypes (ClassP cls argTypes)
+#endif
+       mp <- get
+       case Map.lookup p mp of
+         Just x -> return x
+         Nothing -> do
+           -- Add an entry with a bogus value to limit recursion on
+           -- the predicate we are currently testing
+           modify (Map.insert p [])
+           insts <- qReifyInstances cls argTypes
+           r <- filterM (testInstance cls argTypes) insts
+           -- Now insert the correct value into the map.
+           modify (Map.insert p r)
+           return r
 
 -- testPred :: MonadMIMO m => Pred -> m Bool
 testPred :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
