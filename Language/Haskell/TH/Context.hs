@@ -169,8 +169,9 @@ consistent (AppT cls arg) =
     consistent' cls [arg]
     where
       consistent' (VarT name) args = (not . null) <$> instances name args
-      consistent' (AppT cls' arg) args = consistent' cls' (arg : args)
+      consistent' (AppT cls' typ) types = consistent' cls' (typ : types)
       consistent' _ _ = return False
+consistent typ = error $ "Unexpected Pred: " ++ pprint typ
 #else
 consistent (ClassP cls args) = (not . null) <$> instances cls args -- Do we need additional context here?
 consistent (EqualP (AppT a b) (AppT c d)) =
