@@ -253,7 +253,7 @@ eqInstances
                        "instance GHC.Classes.Eq Text.PrettyPrint.HughesPJ.Style",
                        "instance GHC.Classes.Eq Text.PrettyPrint.HughesPJ.TextDetails",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Control.Applicative.Const a_0 b_1)",
-                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (GHC.Base.Maybe a_0)"
+                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (GHC.Base.Maybe a_0)",
 #else
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Pred",
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Maybe.Maybe a_0)",
