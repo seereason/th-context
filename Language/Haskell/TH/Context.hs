@@ -202,9 +202,9 @@ simpleMissingInstanceTest :: Quasi m => Dec -> m Bool
 simpleMissingInstanceTest dec@(InstanceD _ typ _) =
     case unfoldInstance typ of
       Just (name, types) -> do
-        trace ("name: " ++ show name ++ ", types=" ++ show types) (return ())
+        -- trace ("name: " ++ show name ++ ", types=" ++ show types) (return ())
         insts <- qReifyInstances name types
-        trace ("insts: " ++ show (map pprint insts)) (return ())
+        -- trace ("insts: " ++ show (map pprint insts)) (return ())
         return $ null insts
       Nothing -> error $ "simpleMissingInstanceTest - invalid instance: " ++ pprint dec
     where
