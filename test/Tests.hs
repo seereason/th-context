@@ -6,9 +6,9 @@ import Control.DeepSeq
 import Control.Monad.State (evalStateT, runStateT)
 import Data.Array.Base
 import Data.ByteString (ByteString)
-import Data.List as List (intercalate, map)
+import Data.List as List (intercalate, map, null)
 import Data.Map as Map (Map, fromList, toList, map, mapKeys, empty)
-import Data.Set as Set (Set, fromList, toList)
+import Data.Set as Set (Set, fromList, toList, null, difference, empty)
 import Data.Text (Text)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
@@ -22,19 +22,127 @@ import Expand
 
 main :: IO ()
 main = hspec $ do
+  it "Can run the Q monad" $ do
+     typ <- runQ [t|Int|]
+     typ `shouldBe` ConT ''Int
+
+  -- Test the behavior of th-reify-many
+  it "can tell that there is an instance NFData Char" $
+     $(do insts <- qReifyInstances ''NFData [ConT ''Char]
+          lift $ List.map (unwords . words .pprint) insts) `shouldBe` (["instance Control.DeepSeq.NFData GHC.Types.Char"] :: [String])
+
+  it "can tell that there is no instance NFData ExitCode" $
+     $(do insts <- qReifyInstances ''NFData [ConT ''ExitCode]
+          lift $ List.map (unwords . words .pprint) insts) `shouldBe` ([] :: [String])
+
+  it "can tell that an instance hasn't been declared" $
+     $(missingInstances simpleMissingInstanceTest [d|instance NFData ExitCode|] >>= lift . List.null)
+          `shouldBe` False
+
+  it "can tell that an instance has been declared" $
+     $(missingInstances simpleMissingInstanceTest [d|instance NFData Char|] >>= lift . List.null)
+          `shouldBe` True
+
+-- GHCs older than 7.10 that haven't been specially patched cannot deal with
+-- the unbound type variable a.
+#if __GLASGOW_HASKELL >= 710
+  -- Doesn't actually use any th-context functions, but it tests
+  -- for trac 9262.
+  it "can find all the Eq instances" $ do
+     (setDifferences
+        (Set.fromList
+           $(do insts <- qReifyInstances ''Eq [VarT (mkName "a")]
+                lift (List.map (unwords . words . pprint) insts)))
+        eqInstances)
+      `shouldBe` (SetDifferences {extra = Set.empty, missing = Set.empty})
+
   it "Is using a ghc without bug https://ghc.haskell.org/trac/ghc/ticket/9262 (i.e. either 7.10 or a custom patched ghc)" $ do
      $(do insts <- reifyInstances ''Eq [ListT `AppT` VarT (mkName "a")]
           runIO $ putStrLn (pprint insts)
           lift "ok")
          `shouldBe` "ok"
-  it "Can run the Q monad" $ do
-     typ <- runQ [t|Int|]
-     typ `shouldBe` ConT ''Int
 
-  it "can find all the Eq instances" $ do
-     Set.fromList $(do insts <- qReifyInstances ''Eq [VarT (mkName "a")]
-                       lift (List.map (unwords . words . pprint) insts))
+  it "can match all the Enum instances" $ do
+     (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
+             $(do (insts, mp) <- runStateT (instances ''Enum [VarT (mkName "a")]) mempty
+                  lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
           `shouldBe` (Set.fromList
+                      ["instance GHC.Enum.Enum GHC.Types.Double",
+                      "instance GHC.Enum.Enum GHC.Types.Float",
+                      "instance GHC.Real.Integral a_0 => GHC.Enum.Enum (GHC.Real.Ratio a_0)",
+                      "instance GHC.Enum.Enum GHC.Types.Word",
+                      "instance GHC.Enum.Enum ()",
+                      "instance GHC.Enum.Enum GHC.Types.Bool",
+                      "instance GHC.Enum.Enum GHC.Types.Char",
+                      "instance GHC.Enum.Enum GHC.Types.Int",
+                      "instance GHC.Enum.Enum GHC.Integer.Type.Integer",
+                      "instance GHC.Enum.Enum GHC.Types.Ordering"],
+                      Map.fromList [("GHC.Enum.Enum a",
+                                     Set.fromList
+                                     ["instance GHC.Enum.Enum GHC.Types.Double",
+                                      "instance GHC.Enum.Enum GHC.Types.Float",
+                                      "instance GHC.Real.Integral a_0 => GHC.Enum.Enum (GHC.Real.Ratio a_0)",
+                                      "instance GHC.Enum.Enum GHC.Types.Word",
+                                      "instance GHC.Enum.Enum ()",
+                                      "instance GHC.Enum.Enum GHC.Types.Bool",
+                                      "instance GHC.Enum.Enum GHC.Types.Char",
+                                      "instance GHC.Enum.Enum GHC.Types.Int",
+                                      "instance GHC.Enum.Enum GHC.Integer.Type.Integer",
+                                      "instance GHC.Enum.Enum GHC.Types.Ordering"]),
+                                    ("GHC.Real.Integral a_0",
+                                     Set.fromList
+                                     ["instance GHC.Real.Integral GHC.Types.Int",
+                                      "instance GHC.Real.Integral GHC.Integer.Type.Integer",
+                                      "instance GHC.Real.Integral GHC.Types.Word"])])
+
+  it "can handle multi param class IArray" $ do
+     (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
+             -- Unquote the template haskell Q monad expression
+             $(do -- Run instances and save the result and the state monad result
+                  (insts, mp) <- runStateT (instances ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
+                  -- Convert to lists of text so we can lift out of Q
+                  lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
+          `shouldBe` (Set.fromList
+                      ["instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Bool",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Char",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Double",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Float",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.FunPtr a_0)",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Int",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int16",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int32",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int64",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int8",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.Ptr a_0)",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Stable.StablePtr a_0)",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Word",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word16",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word32",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word64",
+                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"],
+                      Map.fromList [("Data.Array.Base.IArray Data.Array.Base.UArray a",
+                                     Set.fromList
+                                     ["instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Bool",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Char",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Double",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Float",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.FunPtr a_0)",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Int",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int16",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int32",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int64",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int8",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.Ptr a_0)",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Stable.StablePtr a_0)",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Word",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word16",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word32",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word64",
+                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"])])
+#endif
+
+eqInstances
+    = (Set.fromList
                       ["instance (GHC.Arr.Ix ix_0, GHC.Classes.Eq e_1, Data.Array.Base.IArray Data.Array.Base.UArray e_1) => GHC.Classes.Eq (Data.Array.Base.UArray ix_0 e_1)",
                        "instance (GHC.Classes.Eq a_0, GHC.Classes.Eq b_1) => GHC.Classes.Eq ((a_0, b_1))",
                        "instance (GHC.Classes.Eq a_0, GHC.Classes.Eq b_1, GHC.Classes.Eq c_2) => GHC.Classes.Eq ((a_0, b_1, c_2))",
@@ -148,105 +256,27 @@ main = hspec $ do
                        "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (GHC.Base.Maybe a_0)"
 #else
                        "instance GHC.Classes.Eq Language.Haskell.TH.Syntax.Pred",
-                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Maybe.Maybe a_0)"
+                       "instance GHC.Classes.Eq a_0 => GHC.Classes.Eq (Data.Maybe.Maybe a_0)",
 #endif
+                       "instance (GHC.Classes.Eq (f_0 p_1), GHC.Classes.Eq (g_2 p_1)) => GHC.Classes.Eq (GHC.Generics.:*: f_0 g_2 p_1)",
+                       "instance (GHC.Classes.Eq (f_0 p_1), GHC.Classes.Eq (g_2 p_1)) => GHC.Classes.Eq (GHC.Generics.:+: f_0 g_2 p_1)",
+                       "instance (GHC.Classes.Eq a_0, GHC.Classes.Eq b_1) => GHC.Classes.Eq (Data.Either.Either a_0 b_1)",
+                       "instance GHC.Classes.Eq (Data.Type.Equality.:~: a_0 b_1)",
+                       "instance GHC.Classes.Eq (GHC.Generics.U1 p_0)",
+                       "instance GHC.Classes.Eq (f_0 (g_1 p_2)) => GHC.Classes.Eq (GHC.Generics.:.: f_0 g_1 p_2)",
+                       "instance GHC.Classes.Eq (f_0 p_1) => GHC.Classes.Eq (GHC.Generics.M1 i_2 c_3 f_0 p_1)",
+                       "instance GHC.Classes.Eq (f_0 p_1) => GHC.Classes.Eq (GHC.Generics.Rec1 f_0 p_1)",
+                       "instance GHC.Classes.Eq Data.Text.Internal.Text",
+                       "instance GHC.Classes.Eq GHC.Exts.SpecConstrAnnotation",
+                       "instance GHC.Classes.Eq GHC.Generics.Arity",
+                       "instance GHC.Classes.Eq GHC.Generics.Associativity",
+                       "instance GHC.Classes.Eq GHC.Generics.Fixity",
+                       "instance GHC.Classes.Eq Test.Hspec.Core.Example.Result",
+                       "instance GHC.Classes.Eq c_0 => GHC.Classes.Eq (GHC.Generics.K1 i_1 c_0 p_2)",
+                       "instance GHC.Classes.Eq p_0 => GHC.Classes.Eq (GHC.Generics.Par1 p_0)"
                       ])
 
-  -- Test the behavior of th-reify-many
-  it "can tell that there is an instance NFData Char" $
-     $(do insts <- qReifyInstances ''NFData [ConT ''Char]
-          lift $ List.map (unwords . words .pprint) insts) `shouldBe` (["instance Control.DeepSeq.NFData GHC.Types.Char"] :: [String])
+data SetDifferences a = SetDifferences {extra :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
 
-  it "can tell that there is no instance NFData ExitCode" $
-     $(do insts <- qReifyInstances ''NFData [ConT ''ExitCode]
-          lift $ List.map (unwords . words .pprint) insts) `shouldBe` ([] :: [String])
-
-  it "can see tell that instance hasn't been declared" $
-     $(missingInstances simpleMissingInstanceTest [d|instance NFData ExitCode|] >>= lift)
-          `shouldBe` False
-
-  it "doesn't mind if you mention an instance that was already declared" $
-     $(missingInstances simpleMissingInstanceTest [d|instance NFData Char|] >>= lift)
-          `shouldBe` True
-
--- GHCs older than 7.10 that haven't been specially patched cannot deal with
--- the unbound type variable a.
-#if __GLASGOW_HASKELL >= 710
-  it "can match all the Enum instances" $ do
-     (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
-             $(do (insts, mp) <- runStateT (instances ''Enum [VarT (mkName "a")]) mempty
-                  lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
-          `shouldBe` (Set.fromList
-                      ["instance GHC.Enum.Enum GHC.Types.Double",
-                      "instance GHC.Enum.Enum GHC.Types.Float",
-                      "instance GHC.Real.Integral a_0 => GHC.Enum.Enum (GHC.Real.Ratio a_0)",
-                      "instance GHC.Enum.Enum GHC.Types.Word",
-                      "instance GHC.Enum.Enum ()",
-                      "instance GHC.Enum.Enum GHC.Types.Bool",
-                      "instance GHC.Enum.Enum GHC.Types.Char",
-                      "instance GHC.Enum.Enum GHC.Types.Int",
-                      "instance GHC.Enum.Enum GHC.Integer.Type.Integer",
-                      "instance GHC.Enum.Enum GHC.Types.Ordering"],
-                      Map.fromList [("GHC.Enum.Enum a",
-                                     Set.fromList
-                                     ["instance GHC.Enum.Enum GHC.Types.Double",
-                                      "instance GHC.Enum.Enum GHC.Types.Float",
-                                      "instance GHC.Real.Integral a_0 => GHC.Enum.Enum (GHC.Real.Ratio a_0)",
-                                      "instance GHC.Enum.Enum GHC.Types.Word",
-                                      "instance GHC.Enum.Enum ()",
-                                      "instance GHC.Enum.Enum GHC.Types.Bool",
-                                      "instance GHC.Enum.Enum GHC.Types.Char",
-                                      "instance GHC.Enum.Enum GHC.Types.Int",
-                                      "instance GHC.Enum.Enum GHC.Integer.Type.Integer",
-                                      "instance GHC.Enum.Enum GHC.Types.Ordering"]),
-                                    ("GHC.Real.Integral a_0",
-                                     Set.fromList
-                                     ["instance GHC.Real.Integral GHC.Types.Int",
-                                      "instance GHC.Real.Integral GHC.Integer.Type.Integer",
-                                      "instance GHC.Real.Integral GHC.Types.Word"])])
-
-  it "can handle multi param class IArray" $ do
-     (\ (insts, pairs) -> (Set.fromList insts, Map.map Set.fromList (Map.fromList pairs)))
-             -- Unquote the template haskell Q monad expression
-             $(do -- Run instances and save the result and the state monad result
-                  (insts, mp) <- runStateT (instances ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
-                  -- Convert to lists of text so we can lift out of Q
-                  lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
-          `shouldBe` (Set.fromList
-                      ["instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Bool",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Char",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Double",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Float",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.FunPtr a_0)",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Int",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int16",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int32",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int64",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int8",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.Ptr a_0)",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Stable.StablePtr a_0)",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Word",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word16",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word32",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word64",
-                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"],
-                      Map.fromList [("Data.Array.Base.IArray Data.Array.Base.UArray a",
-                                     Set.fromList
-                                     ["instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Bool",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Char",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Double",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Float",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.FunPtr a_0)",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Int",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int16",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int32",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int64",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Int.Int8",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Ptr.Ptr a_0)",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray (GHC.Stable.StablePtr a_0)",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Types.Word",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word16",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word32",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word64",
-                                      "instance Data.Array.Base.IArray Data.Array.Base.UArray GHC.Word.Word8"])])
-#endif
+setDifferences :: Ord a => Set a -> Set a -> SetDifferences a
+setDifferences a b = SetDifferences {extra = Set.difference a b, missing = Set.difference b a}
