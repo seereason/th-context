@@ -190,6 +190,10 @@ unify x = [x]
 -- we encounter a class name applied to a list of type parameters.
 consistent :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
 #if MIN_VERSION_template_haskell(2,10,0)
+consistent typ
+    | isJust (unfoldInstance typ) =
+        let Just (className, typeParameters) = unfoldInstance typ in
+        (not . null) <$> qReifyInstancesWithContext className typeParameters
 consistent (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
     -- I'm told this is incorrect in the presence of type functions
     (&&) <$> consistent (AppT (AppT EqualityT a) c) <*> consistent (AppT (AppT EqualityT b) d)
@@ -197,12 +201,6 @@ consistent (AppT (AppT EqualityT (VarT _)) _) = return True
 consistent (AppT (AppT EqualityT _) (VarT _)) = return True
 consistent (AppT (AppT EqualityT a) b) | a == b = return True
 consistent (AppT (AppT EqualityT _) _) = return False
-consistent (AppT cls arg) =
-    consistent' cls [arg]
-    where
-      consistent' (VarT name) args = (not . null) <$> instances name args
-      consistent' (AppT cls' typ) types = consistent' cls' (typ : types)
-      consistent' _ _ = return False
 consistent typ = error $ "Unexpected Pred: " ++ pprint typ
 #else
 consistent (EqualP (AppT a b) (AppT c d)) =
