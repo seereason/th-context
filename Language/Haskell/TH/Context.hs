@@ -153,14 +153,21 @@ simplifyPredicate context _ = context
 -- | Test the context (predicates) against both the instances in the Q
 -- monad and the additional instances that have accumulated in the
 -- State monad.
-testContextWithState :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
-testContextWithState predicate = do
+testContextWithState :: forall m. (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => [Pred] -> m Bool
+testContextWithState context = do
   -- Is the instance already in the Q monad?
-  flag <- testContext [predicate]
+  flag <- testContext context
   case flag of
     True -> return True
-    -- Have we already generated and inserted the instance into the map in the state monad?
-    False -> maybe False (not . null) <$> (Map.lookup <$> expandTypes predicate <*> get)
+    -- Have we already generated and inserted the instance into the
+    -- map in the state monad?  (Shouldn't we try this before calling
+    -- testContext?)
+    False ->
+        do context' <- mapM expandTypes context
+           and <$> mapM testPredicate context'
+    where
+      testPredicate :: Pred -> m Bool
+      testPredicate predicate = maybe False (not . null) <$> (Map.lookup predicate <$> get)
 
 -- | Unify the two arguments of an EqualP predicate, return a list of
 -- simpler predicates associating types with a variables.
