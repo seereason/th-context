@@ -12,10 +12,10 @@
 module Language.Haskell.TH.Context
     ( ExpandType(expandType)
     , expandTypes
+    , reifyInstancesWithContext -- was instances
     , testInstance
     , testContext
-    , instances
-    , testPred
+    , testContextWithState -- was testPred
     , missingInstances
     , simpleMissingInstanceTest
     ) where
@@ -67,13 +67,43 @@ class ExpandType m where
 expandTypes :: (Quasi m, ExpandType m, Data a) => a -> m a
 expandTypes = everywhereM (mkM expandType)
 
+-- | Like 'qReifyInstances', looks up all the instances that match the
+-- given class name and argument types.  However, unlike
+-- 'qReifyInstances', only the ones that satisfy all the instance
+-- context predicates are returned.
+reifyInstancesWithContext :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) =>
+                             Name -> [Type] -> m [InstanceDec]
+reifyInstancesWithContext className typeParameters = do
+#if MIN_VERSION_template_haskell(2,10,0)
+       p <- expandTypes (foldl AppT (ConT className) typeParameters)
+#else
+       p <- expandTypes (ClassP className typeParameters)
+#endif
+       mp <- get
+       case Map.lookup p mp of
+         Just x -> return x
+         Nothing -> do
+           -- Add an entry with a bogus value to limit recursion on
+           -- the predicate we are currently testing
+           modify (Map.insert p [])
+           -- Get all the instances of className that unify with the type parameters.
+           insts <- qReifyInstances className typeParameters
+           -- Filter out the ones that conflict with the instance context
+           r <- filterM (testInstance className typeParameters) insts
+           -- Now insert the correct value into the map and return it.
+           modify (Map.insert p r)
+           return r
+
 -- | Test one of the instances returned by qReifyInstances against the
 -- context we have computed so far.  We have already added a ClassP predicate
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
 testInstance :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> InstanceDec -> m Bool
-testInstance cls argTypes (InstanceD newContext instType _) = do
-  testContext (instancePredicates (reverse argTypes) instType ++ newContext)
+testInstance className typeParameters (InstanceD instanceContext instanceType _) = do
+  -- The new context consists of predicates derived by unifying the
+  -- type parameters with the instance type, plus the prediates in the
+  -- instance context field.
+  testContext (instancePredicates (reverse typeParameters) instanceType ++ instanceContext)
     where
       instancePredicates :: [Type] -> Type -> [Pred]
 #if MIN_VERSION_template_haskell(2,10,0)
@@ -81,21 +111,18 @@ testInstance cls argTypes (InstanceD newContext instType _) = do
 #else
       instancePredicates (x : xs) (AppT l r) = EqualP x r : instancePredicates xs l
 #endif
-      instancePredicates [] (ConT cls') | cls == cls' = []
-      instancePredicates _ _ = error $ (unlines ["testInstance: Failure unifying instance with arguments.  This should never",
-                                                 "happen because qReifyInstance returned this instance for these exact arguments:",
-                                                 " argTypes=[" ++ intercalate ", " (map show argTypes) ++ "]",
-                                                 " instType=" ++ show instType])
-testInstance _ _ x = error $ "Unexpected InstanceDec.  If this happens there must be some new sort of instance declaration I wasn't expecting: " ++ show x
+      instancePredicates [] (ConT className') | className == className' = []
+      instancePredicates _ _ =
+          error $ (unlines ["testInstance: Failure unifying instance with arguments.  This should never",
+                            "happen because qReifyInstance returned this instance for these exact arguments:",
+                            " typeParameters=[" ++ intercalate ", " (map show typeParameters) ++ "]",
+                            " instanceType=" ++ show instanceType])
+testInstance _ _ x = error $ "qReifyInstances returned something that doesn't appear to be an instance declaration: " ++ show x
 
--- | Is this list of predicates satisfiable?  Find out using type
--- synonym expansion, variable substitution, elimination of vacuous
--- predicates, and unification.
---
--- Elements of the Pred type correspond to elements of the list to the
--- left of the @=>@ in a Haskell declaration.  These can either be
--- @ClassP@ values which represent superclasses, or @EqualP@ values
--- which represent uses of the @~@ operator.
+-- | Now we have predicates representing the unification of the type
+-- parameters with the instance type.  Are they consistent?  Find out
+-- using type synonym expansion, variable substitution, elimination of
+-- vacuous predicates, and unification.
 testContext :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => [Pred] -> m Bool
 testContext context =
     and <$> (mapM consistent =<< simplifyContext context)
@@ -106,22 +133,34 @@ simplifyContext :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m
 simplifyContext context =
     do (expanded :: [Pred]) <- expandTypes context
        let (context' :: [Pred]) = concat $ map unify expanded
-       let context'' = foldl testPredicate context' context'
+       let context'' = foldl simplifyPredicate context' context'
        if (context'' == context) then return context'' else simplifyContext context''
 
 -- | Try to simplify the context by eliminating of one of the predicates.
 -- If we succeed start again with the new context.
-testPredicate :: [Pred] -> Pred -> [Pred]
+simplifyPredicate :: [Pred] -> Pred -> [Pred]
 #if MIN_VERSION_template_haskell(2,10,0)
-testPredicate context (AppT (AppT EqualityT v@(VarT _)) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
-testPredicate context (AppT (AppT EqualityT a) v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
-testPredicate context p@(AppT (AppT EqualityT a) b) | a == b = filter (/= p) context
+simplifyPredicate context (AppT (AppT EqualityT v@(VarT _)) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
+simplifyPredicate context (AppT (AppT EqualityT a) v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
+simplifyPredicate context p@(AppT (AppT EqualityT a) b) | a == b = filter (/= p) context
 #else
-testPredicate context (EqualP v@(VarT _) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
-testPredicate context (EqualP a v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
-testPredicate context p@(EqualP a b) | a == b = filter (/= p) context
+simplifyPredicate context (EqualP v@(VarT _) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
+simplifyPredicate context (EqualP a v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
+simplifyPredicate context p@(EqualP a b) | a == b = filter (/= p) context
 #endif
-testPredicate context _ = context
+simplifyPredicate context _ = context
+
+-- | Test the context (predicates) against both the instances in the Q
+-- monad and the additional instances that have accumulated in the
+-- State monad.
+testContextWithState :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
+testContextWithState predicate = do
+  -- Is the instance already in the Q monad?
+  flag <- testContext [predicate]
+  case flag of
+    True -> return True
+    -- Have we already generated and inserted the instance into the map in the state monad?
+    False -> maybe False (not . null) <$> (Map.lookup <$> expandTypes predicate <*> get)
 
 -- | Unify the two arguments of an EqualP predicate, return a list of
 -- simpler predicates associating types with a variables.
@@ -139,6 +178,9 @@ unify (EqualP a b@(VarT _)) = [EqualP a b]
 #endif
 unify x = [x]
 
+-- | Decide whether a predicate is consistent with the accumulated
+-- context.  Use recursive calls to qReifyInstancesWithContext when
+-- we encounter a class name applied to a list of type parameters.
 consistent :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
 #if MIN_VERSION_template_haskell(2,10,0)
 consistent (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
@@ -156,7 +198,6 @@ consistent (AppT cls arg) =
       consistent' _ _ = return False
 consistent typ = error $ "Unexpected Pred: " ++ pprint typ
 #else
-consistent (ClassP cls args) = (not . null) <$> instances cls args -- Do we need additional context here?
 consistent (EqualP (AppT a b) (AppT c d)) =
     -- I'm told this is incorrect in the presence of type functions
     (&&) <$> consistent (EqualP a c) <*> consistent (EqualP b d)
@@ -164,49 +205,19 @@ consistent (EqualP (VarT _) _) = return True
 consistent (EqualP _ (VarT _)) = return True
 consistent (EqualP a b) | a == b = return True
 consistent (EqualP _ _) = return False
+consistent (ClassP className typeParameters) =
+    (not . null) <$> reifyInstancesWithContext className typeParameters -- Do we need additional context here?
 #endif
-
--- | Look up all the instances that match the given class name and
--- argument types, return only the ones (if any) that satisfy all the
--- instance context predicates.
-instances :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Name -> [Type] -> m [InstanceDec]
--- Ask for matching instances for this list of types, then see whether
--- any of them can be unified with the instance context.
-instances cls argTypes = do
-#if MIN_VERSION_template_haskell(2,10,0)
-       p <- expandTypes (foldl AppT (ConT cls) argTypes)
-#else
-       p <- expandTypes (ClassP cls argTypes)
-#endif
-       mp <- get
-       case Map.lookup p mp of
-         Just x -> return x
-         Nothing -> do
-           -- Add an entry with a bogus value to limit recursion on
-           -- the predicate we are currently testing
-           modify (Map.insert p [])
-           insts <- qReifyInstances cls argTypes
-           r <- filterM (testInstance cls argTypes) insts
-           -- Now insert the correct value into the map.
-           modify (Map.insert p r)
-           return r
-
--- testPred :: MonadMIMO m => Pred -> m Bool
-testPred :: (Quasi m, ExpandType m, MonadState (Map Pred [InstanceDec]) m) => Pred -> m Bool
-testPred predicate = do
-  -- Is the instance already in the Q monad?
-  flag <- testContext [predicate]
-  case flag of
-    True -> return True
-    -- Have we already generated and inserted the instance into the map in the state monad?
-    False -> maybe False (not . null) <$> (Map.lookup <$> expandTypes predicate <*> get)
 
 -- | Apply a filter such as 'simpleMissingInstanceTest' to a list of
 -- instances, resulting in a non-overlapping list of instances.
 missingInstances :: Quasi m => (Dec -> m Bool) -> m [Dec] -> m [Dec]
 missingInstances test decs = decs >>= mapM (\ dec -> test dec >>= \ flag -> return $ if flag then Just dec else Nothing) >>= return . catMaybes
 
--- | Return True if no instance matches the types (ignoring the instance context)
+-- | Return True if no instance matches the types (ignoring the instance context.)
+-- Passing qReifyInstance as the reifyInstanceFunction argument gives a naive test,
+-- passing qReifyInstanceWithContext will also accept (return True for) instances
+-- which...
 simpleMissingInstanceTest :: Quasi m => Dec -> m Bool
 simpleMissingInstanceTest dec@(InstanceD _ typ _) =
     case unfoldInstance typ of
@@ -216,8 +227,9 @@ simpleMissingInstanceTest dec@(InstanceD _ typ _) =
         -- trace ("insts: " ++ show (map pprint insts)) (return ())
         return $ null insts
       Nothing -> error $ "simpleMissingInstanceTest - invalid instance: " ++ pprint dec
-    where
-      unfoldInstance (ConT name) = Just (name, [])
-      unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
-      unfoldInstance _ = Nothing
 simpleMissingInstanceTest dec = error $ "simpleMissingInstanceTest - invalid instance: " ++ pprint dec
+
+unfoldInstance :: Type -> Maybe (Name, [Type])
+unfoldInstance (ConT name) = Just (name, [])
+unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
+unfoldInstance _ = Nothing

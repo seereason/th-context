@@ -12,7 +12,7 @@ import Data.Set as Set (Set, fromList, toList, null, difference, empty)
 import Data.Text (Text)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (instances, testContext, missingInstances, simpleMissingInstanceTest)
+import Language.Haskell.TH.Context (reifyInstancesWithContext, testContext, missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.ReifyMany
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
@@ -64,7 +64,7 @@ main = hspec $ do
 
   it "can match all the Enum instances" $ do
      (\ (insts, _pairs) -> (setDifferences (Set.fromList insts) enumInstances))
-             $(do (insts, mp) <- runStateT (instances ''Enum [VarT (mkName "a")]) mempty
+             $(do (insts, mp) <- runStateT (reifyInstancesWithContext ''Enum [VarT (mkName "a")]) mempty
                   lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
           `shouldBe` (SetDifferences {unexpected = Set.empty, expected = Set.empty})
 
@@ -73,7 +73,7 @@ main = hspec $ do
                            Map.map Set.fromList (Map.fromList pairs)))
              -- Unquote the template haskell Q monad expression
              $(do -- Run instances and save the result and the state monad result
-                  (insts, mp) <- runStateT (instances ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
+                  (insts, mp) <- runStateT (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
                   -- Convert to lists of text so we can lift out of Q
                   lift (List.map (unwords . words . pprint) insts, Map.toList (Map.map (List.map (unwords . words . pprint)) (Map.mapKeys pprint mp))))
           `shouldBe` (SetDifferences {unexpected = Set.empty, expected = Set.empty},
