@@ -12,6 +12,8 @@
 module Language.Haskell.TH.Context
     ( ExpandType(expandType)
     , expandTypes
+    , InstMap
+    , evalInstMap
     , reifyInstancesWithContext -- was instances
     , testInstance
     , testContext
@@ -22,12 +24,13 @@ module Language.Haskell.TH.Context
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (filterM)
-import Control.Monad.State (MonadState, StateT(StateT), get, modify, runStateT)
+import Control.Monad.State (MonadState, StateT(StateT), get, modify, runStateT, evalStateT)
 import Control.Monad.Trans (lift)
 import Data.Generics (Data, everywhere, mkT, everywhereM, mkM)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert)
 import Data.Maybe (catMaybes)
+import Data.Monoid (mempty)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
@@ -66,6 +69,11 @@ class ExpandType m where
 
 expandTypes :: (Quasi m, ExpandType m, Data a) => a -> m a
 expandTypes = everywhereM (mkM expandType)
+
+type InstMap = Map Pred [InstanceDec]
+
+evalInstMap :: Monad m => StateT InstMap m r -> m r
+evalInstMap action = evalStateT action (mempty :: InstMap)
 
 -- | Like 'qReifyInstances', looks up all the instances that match the
 -- given class name and argument types.  However, unlike
