@@ -22,7 +22,7 @@ flag patched-for-trac-9262
   Default: False
 
 library
-  build-depends:    base >= 4.2 && < 5, template-haskell >= 2.9, mtl, syb, containers, th-orphans >= 0.9.1, th-desugar
+  build-depends:    base >= 4.2 && < 5, template-haskell >= 2.9, mtl, syb, containers, th-orphans >= 0.10.0, th-desugar
   ghc-options:      -Wall
   exposed-modules:  Language.Haskell.TH.Context,
                     Language.Haskell.TH.DesugarExpandType

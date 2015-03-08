@@ -24,8 +24,7 @@ module Language.Haskell.TH.Context
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (filterM)
-import Control.Monad.State (MonadState, StateT(StateT), get, modify, runStateT, evalStateT)
-import Control.Monad.Trans (lift)
+import Control.Monad.State (MonadState, StateT, get, modify, evalStateT)
 import Data.Generics (Data, everywhere, mkT, everywhereM, mkM)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert)
@@ -34,26 +33,6 @@ import Data.Monoid (mempty)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
-
-instance Quasi m => Quasi (StateT s m) where
-  qNewName          = lift . qNewName
-  qReport a b       = lift $ qReport a b
-  qRecover m1 m2    = StateT $ \ s -> runStateT m1 s `qRecover` runStateT m2 s
-  qLookupName a b   = lift $ qLookupName a b
-  qReify            = lift . qReify
-  qReifyInstances a b = lift $ qReifyInstances a b
-  qLocation         = lift qLocation
-  qRunIO            = lift . qRunIO
-  qAddDependentFile = lift . qAddDependentFile
-#if MIN_VERSION_template_haskell(2,9,0)
-  qReifyRoles       = lift . qReifyRoles
-  qReifyAnnotations = lift . qReifyAnnotations
-  qReifyModule      = lift . qReifyModule
-  qAddTopDecls      = lift . qAddTopDecls
-  qAddModFinalizer  = lift . qAddModFinalizer
-  qGetQ             = lift qGetQ
-  qPutQ             = lift . qPutQ
-#endif
 
 -- | Extend the Quasi class to require a function for expanding a TH Type.  The
 -- th-desugar package has a function that can be used to implement this, but I
