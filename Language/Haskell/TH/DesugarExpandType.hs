@@ -14,7 +14,3 @@ import Language.Haskell.TH.Desugar.Sweeten as DS (typeToTH)
 
 instance DsMonad m => ExpandType m where
     expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expandType)
-
--- This lets Context wrap some state around m and still use DsMonad.
-instance DsMonad m => DsMonad (StateT s m) where
-    localDeclarations = lift localDeclarations
