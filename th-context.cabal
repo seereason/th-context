@@ -22,10 +22,20 @@ flag patched-for-trac-9262
   Default: False
 
 library
-  build-depends:    base >= 4.2 && < 5, template-haskell >= 2.9, mtl, syb, containers, th-orphans >= 0.10.0, th-desugar
+  build-depends:
+    base >= 4.2 && < 5,
+    containers,
+    haskell-src-exts,
+    mtl,
+    syb,
+    template-haskell >= 2.9,
+    th-desugar,
+    th-orphans >= 0.10.0
   ghc-options:      -Wall
   exposed-modules:  Language.Haskell.TH.Context,
-                    Language.Haskell.TH.DesugarExpandType
+                    Language.Haskell.TH.DesugarExpandType,
+                    Language.Haskell.TH.Fold,
+                    Language.Haskell.TH.TypeGraph
   default-language: Haskell2010
   if flag(patched-for-trac-9262)
     cpp-options:      -DPATCHED_FOR_TRAC_9262
@@ -39,12 +49,15 @@ test-suite th-context-tests
                     bytestring,
                     containers,
                     deepseq,
+                    ghc-prim,
                     hspec,
+                    hspec-core,
                     mtl,
                     template-haskell >= 2.9,
                     text,
                     th-context,
                     th-desugar,
+                    th-orphans,
                     th-reify-many
   default-language: Haskell2010
   if flag(patched-for-trac-9262)
