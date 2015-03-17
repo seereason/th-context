@@ -69,7 +69,8 @@ subtypesOfType =
             [t| Pred |],
             [t| TyLit |],
             [t| TyVarBndr |],
-            [t| Type |]
+            [t| Type |],
+            (return ListT)
           ] >>= lift)
 
 decEdges :: Set (String, [String])
@@ -246,6 +247,7 @@ arity0SubtypesOfDec =
            "Language.Haskell.TH.Syntax.FixityDirection",
            "Language.Haskell.TH.Syntax.Foreign",
            "Language.Haskell.TH.Syntax.FunDep",
+           "Language.Haskell.TH.Syntax.Guard",
            "Language.Haskell.TH.Syntax.Inline",
            "Language.Haskell.TH.Syntax.Lit",
            "Language.Haskell.TH.Syntax.Match",
@@ -265,6 +267,7 @@ arity0SubtypesOfDec =
            "Language.Haskell.TH.Syntax.RuleMatch",
            "Language.Haskell.TH.Syntax.Safety",
            "Language.Haskell.TH.Syntax.Stmt",
+           "Language.Haskell.TH.Syntax.Strict",
            "Language.Haskell.TH.Syntax.TyLit",
            "Language.Haskell.TH.Syntax.TySynEqn",
            "Language.Haskell.TH.Syntax.TyVarBndr",

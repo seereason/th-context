@@ -22,6 +22,9 @@ module Language.Haskell.TH.TypeGraph
 
 import Debug.Trace
 
+#if __GLASGOW_HASKELL__ < 709
+import Control.Applicative
+#endif
 -- import Control.Category ((.))
 import Control.Monad.RWS (RWST)
 import Control.Monad.Reader (ask, local, ReaderT, runReaderT)
@@ -30,9 +33,9 @@ import Control.Monad.Trans (lift)
 import Control.Monad.Writer (MonadWriter(tell), WriterT(runWriterT))
 import Data.Generics (Data, Typeable)
 --import Data.Graph (Graph, Vertex, graphFromEdges)
-import Data.Map as Map (Map, member, insert, update)
+import Data.Map as Map (Map, member, insert, update, keys)
 import Data.Monoid (Monoid, mempty)
-import Data.Set as Set (insert, member, Set, empty)
+import Data.Set as Set (insert, member, Set, empty, fromList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context (expandTypes)
@@ -92,16 +95,9 @@ type StackT m = ReaderT [StackElement] m
 execStackT :: Monad m => StackT m a -> m a
 execStackT action = runReaderT action []
 
--- instance DsMonad m => MonadMIMO (StackT InstMap m)
-
 subtypes :: DsMonad m => Type -> m (Set Type)
 subtypes typ = do
-  execStateT (visitSubtypes guard doApply doDec typ) mempty
-      where
-        guard = return . Just
-        doApply _ _ = return ()
-        doDec _ _ _ = return ()
-
+  (Set.fromList . Map.keys) <$> typeGraphEdges typ
 
 typeGraphEdges :: forall m. DsMonad m =>
                   Type
@@ -119,7 +115,10 @@ typeGraphEdges unexpandedType = do
             maybe (return ()) (\ ptype -> modify (Map.update (Just . (Set.insert typ)) ptype)) parent
             modify (Map.insert typ Set.empty) -- Indicate that we are processing a type
             case typ of
-              (ForallT _ _ typ') -> modify (Map.update (Just . (Set.insert typ')) typ) >> doType (Just typ) typ'
+              -- Is forall a. T the same node as T?  Or should there
+              -- be two nodes?  Or just a node for forall a. T?  Here
+              -- we treat it as a different node.
+              (ForallT _ _ typ') -> {- modify (Map.update (Just . (Set.insert typ')) typ) >> -} doType parent typ'
               (AppT container element) -> doApply container element
               (ConT name) -> do
                 info <- qReify name
@@ -142,54 +141,6 @@ typeGraphEdges unexpandedType = do
       doField tname _dec _cname (_fld, unexpandedType') = do
         typ <- expandTypes unexpandedType'
         doType (Just (ConT tname)) typ
-
--- | A traversal of all the accessable types.
-visitSubtypes :: forall m. (DsMonad m, Quasi m) =>
-             (Type -> m (Maybe Type))
-          -> (Type -> Type -> m ())
-          -> (Type -> Dec -> [Con] -> m ())
-          -> Type
-          -> StateT (Set Type) m ()
-visitSubtypes guard applyf decf unexpandedType =
-    doType unexpandedType
-    where
-      doType :: Type -> StateT (Set Type) m ()
-      doType unexpandedType' =
-          do typ <- expandTypes unexpandedType'
-             arity <- lift (typeArity typ)
-             visited <- get
-             case (arity, Set.member typ visited) of
-               (n, _) | n > 0 -> return ()
-               (_, True) -> return ()
-               (_, False) -> do
-                 mtyp <- lift (guard typ)
-                 case mtyp of
-                   Nothing -> return ()
-                   Just typ' | typ' /= typ -> doType typ'
-                   _ ->
-                       do modify (Set.insert typ)
-                          case typ of
-                            (ForallT _ _ typ') -> doType typ'
-                            (AppT container element) ->
-                                do lift (applyf container element)
-                                   doType container
-                                   doType element
-                            (ConT name) ->
-                                do info <- qReify name
-                                   case info of
-                                     TyConI dec -> doDec typ dec
-                                     _ -> return ()
-                            _ -> return ()
-      doDec :: DsMonad m => Type -> Dec -> StateT (Set Type) m ()
-      doDec typ dec@(DataD _ _name _ cons _) = lift (decf typ dec cons) >> mapM_ doCon cons
-      doDec typ dec@(NewtypeD _ _name _ con _) = lift (decf typ dec [con]) >> doCon con
-      doDec _ _ = return ()
-      doCon (NormalC _name fields) = mapM_ doField fields
-      doCon (RecC _name fields) = mapM_ doField' fields
-      doCon (InfixC lhs _op rhs) = mapM_ doField [lhs, rhs]
-      doCon (ForallC _ _ con) = doCon con
-      doField (_, typ) = doType typ
-      doField' (_, _, typ) = doType typ
 
 {-
 subtypeGraph :: Monad m => Type -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
