@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -19,6 +20,7 @@ module Language.Haskell.TH.TypeGraph
     , subtypes
     , typeGraphEdges
     , typeGraphEdgesPlus
+    , subtypeGraph
     ) where
 
 import Debug.Trace
@@ -33,10 +35,10 @@ import Control.Monad.State (evalStateT, execStateT, modify, MonadState(get), Sta
 import Control.Monad.Trans (lift)
 import Control.Monad.Writer (MonadWriter(tell), WriterT(runWriterT))
 import Data.Generics (Data, Typeable)
---import Data.Graph (Graph, Vertex, graphFromEdges)
-import Data.Map as Map (Map, member, insert, update, keys)
+import Data.Graph (Graph, Vertex, graphFromEdges)
+import Data.Map as Map (Map, member, insert, update, keys, toList)
 import Data.Monoid (Monoid, mempty)
-import Data.Set as Set (insert, Set, empty, fromList)
+import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context (expandTypes)
@@ -156,7 +158,7 @@ typeGraphEdgesPlus augment type0 = do
       doCon tname dec (ForallC _ _ con) = doCon tname dec con
       doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map snd fields))
       doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ) -> (Right fname, typ)) fields)
-      doCon tname dec (InfixC lhs cname rhs) = mapM_ (doField tname dec cname) [lhs, rhs]
+      doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
 
       doField tname _dec _cname (_fld, typ') = doUnexpandedType (Just (ConT tname)) typ'
 
@@ -164,12 +166,14 @@ typeGraphEdgesPlus augment type0 = do
 -- represent the primitive lenses, and each path in the graph is a
 -- composition of lenses.
 
-{-
-subtypeGraph :: Monad m => Type -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
-subtypeGraph unexpandedType = do
-  typ <- expandTypes unexpandedType
-  graphFromEdges
+subtypeGraph :: (DsMonad m, node ~ Type, key ~ Type) =>
+                (Type -> m (Maybe Type)) -> Type -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
+subtypeGraph augment typ = do
+  typeGraphEdgesPlus augment typ >>= return . graphFromEdges . triples
+    where
+      triples mp = map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
 
+{-
 adjacentTypes :: DsMonad m => Type -> m (Type, [Type])
 adjacentTypes (ForallT _ _ typ) = adjacentTypes typ
 adjacentTypes (AppT t1 t2) = [t1, t2]
