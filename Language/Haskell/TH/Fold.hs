@@ -74,7 +74,7 @@ foldType _ _ ofn _ = ofn
 typeArity :: Quasi m => Type -> m Int
 typeArity typ =
     foldType
-      (foldName decArity (\_ _ _ -> return 0))
+      (foldName decArity (\_ _ _ -> return 0) (\ info -> error $ "typeArity - unexpected: " ++ show info))
       (\t _  -> typeArity t >>= \ n -> return $ n - 1)
       (return $ case typ of
                   ListT -> 1
@@ -99,14 +99,15 @@ foldTypeP nfn afn ofn typ = runIdentity $ foldType (\ n -> Identity $ nfn n) (\ 
 foldName :: Quasi m =>
             (Dec -> m r)
          -> (Name -> Int -> Bool -> m r)
+         -> (Info -> m r)
          -> Name -> m r
-foldName decFn primFn name = do
+foldName decFn primFn otherFn name = do
   info <- qReify name
   case info of
     (TyConI dec) ->
         decFn dec
     (PrimTyConI a b c) -> primFn a b c
-    _ -> error $ "foldInfo - unexpected: " ++ show info
+    _ -> otherFn info
 
 -- | Dispatch on the different constructors of the Dec type.
 foldDec :: Monad m =>
@@ -204,7 +205,7 @@ class HasPrimitiveType t where
     hasPrimitiveType :: Quasi m => t -> m Bool
 
 instance HasPrimitiveType Name where
-    hasPrimitiveType = foldName (\ _ -> return False) (\ _ _ _ -> return True)
+    hasPrimitiveType = foldName (\ _ -> return False) (\ _ _ _ -> return True) (\ _ -> return False)
 
 instance HasPrimitiveType Type where
     hasPrimitiveType = foldType hasPrimitiveType afn ofn
