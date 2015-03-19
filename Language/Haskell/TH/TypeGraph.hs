@@ -119,7 +119,7 @@ typeGraphEdgesPlus
     -> [Type]
     -> m (Map Type (Set Type))
 typeGraphEdgesPlus augment types = do
-  execStateT (mapM_ (doType Nothing) types) mempty
+  execStateT (mapM_ (doUnexpandedType Nothing) types) mempty
     where
       doUnexpandedType :: Maybe Type -> Type -> StateT (Map Type (Set Type)) m ()
       doUnexpandedType parent typ = expandTypes typ >>= lift . augment >>= maybe (return ()) (doType parent)
