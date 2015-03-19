@@ -19,26 +19,26 @@ import Common
 tests :: SpecM () ()
 tests = do
   it "can find the subtypes of Type" $ do
-     setDifferences (fromList $(runQ [t|Type|] >>= subtypes >>= lift . Set.toList)) subtypesOfType
+     setDifferences (fromList $(runQ [t|Type|] >>= subtypes . (: []) >>= lift . Set.toList)) subtypesOfType
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Type" $ do
-     setDifferences (fromList $(runQ [t|Type|] >>= typeGraphEdges >>= lift . map toStrings . Map.toList)) typeEdges
+     setDifferences (fromList $(runQ [t|Type|] >>= typeGraphEdges . (: []) >>= lift . map toStrings . Map.toList)) typeEdges
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Dec" $ do
-     setDifferences (fromList $(runQ [t|Dec|] >>= typeGraphEdges >>= lift . map toStrings . Map.toList)) decEdges
+     setDifferences (fromList $(runQ [t|Dec|] >>= typeGraphEdges . (: []) >>= lift . map toStrings . Map.toList)) decEdges
         `shouldBe` noDifferences
 
   it "can find the subtypes of Dec" $ do
      setDifferences (fromList $(runQ [t|Dec|] >>=
-                                subtypes >>=
+                                subtypes . (: []) >>=
                                 lift . map (unwords . words . pprint) . Set.toList)) subtypesOfDec
         `shouldBe` noDifferences
 
   it "can find the arity 0 subtypes of Dec" $ do
      setDifferences (fromList $(runQ [t|Dec|] >>=
-                                subtypes >>=
+                                subtypes . (: []) >>=
                                 filterM (\ t -> typeArity t >>= \ a -> return (a == 0)) . Set.toList >>=
                                 lift . map (unwords . words . pprint))) arity0SubtypesOfDec
         `shouldBe` noDifferences

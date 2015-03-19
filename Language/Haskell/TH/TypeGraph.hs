@@ -98,11 +98,11 @@ type StackT m = ReaderT [StackElement] m
 execStackT :: Monad m => StackT m a -> m a
 execStackT action = runReaderT action []
 
-subtypes :: DsMonad m => Type -> m (Set Type)
-subtypes typ = do
-  (Set.fromList . Map.keys) <$> typeGraphEdges typ
+subtypes :: DsMonad m => [Type] -> m (Set Type)
+subtypes types = do
+  (Set.fromList . Map.keys) <$> typeGraphEdges types
 
-typeGraphEdges :: forall m. DsMonad m => Type -> m (Map Type (Set Type))
+typeGraphEdges :: forall m. DsMonad m => [Type] -> m (Map Type (Set Type))
 typeGraphEdges = typeGraphEdgesPlus (return . Just)
 
 typeGraphEdgesPlus
@@ -116,10 +116,10 @@ typeGraphEdgesPlus
            -- passed to @doType@, and replace it with @b@, and use the
            -- lens returned by @View's@ method to convert between @a@
            -- and @b@.
-    -> Type
+    -> [Type]
     -> m (Map Type (Set Type))
-typeGraphEdgesPlus augment type0 = do
-  execStateT (doType Nothing type0) mempty
+typeGraphEdgesPlus augment types = do
+  execStateT (mapM_ (doType Nothing) types) mempty
     where
       doUnexpandedType :: Maybe Type -> Type -> StateT (Map Type (Set Type)) m ()
       doUnexpandedType parent typ = expandTypes typ >>= lift . augment >>= maybe (return ()) (doType parent)
@@ -165,11 +165,10 @@ typeGraphEdgesPlus augment type0 = do
 -- | Build a graph from the result of typeGraphEdgesPlus, its edges
 -- represent the primitive lenses, and each path in the graph is a
 -- composition of lenses.
-
 subtypeGraph :: (DsMonad m, node ~ Type, key ~ Type) =>
-                (Type -> m (Maybe Type)) -> Type -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
-subtypeGraph augment typ = do
-  typeGraphEdgesPlus augment typ >>= return . graphFromEdges . triples
+                (Type -> m (Maybe Type)) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
+subtypeGraph augment types = do
+  typeGraphEdgesPlus augment types >>= return . graphFromEdges . triples
     where
       triples mp = map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
 

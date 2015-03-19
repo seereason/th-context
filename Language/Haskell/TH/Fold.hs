@@ -74,7 +74,10 @@ foldType _ _ ofn _ = ofn
 typeArity :: Quasi m => Type -> m Int
 typeArity typ =
     foldType
-      (foldName decArity (\_ _ _ -> return 0) (\ info -> error $ "typeArity - unexpected: " ++ show info))
+      (foldName
+         decArity
+         (\_ _ _ -> return 0)
+         infoArity)
       (\t _  -> typeArity t >>= \ n -> return $ n - 1)
       (return $ case typ of
                   ListT -> 1
@@ -86,7 +89,9 @@ typeArity typ =
       decArity (DataD _ _ vs _ _) = return $ length vs
       decArity (NewtypeD _ _ vs _ _) = return $ length vs
       decArity (TySynD _ vs t) = typeArity t >>= \ n -> return $ n + length vs
+      decArity (FamilyD _ _ vs mk) = return $ {- not sure what to do with the kind mk here -} length vs
       decArity dec = error $ "decArity - unexpected: " ++ show dec
+      infoArity (FamilyI dec _) = decArity dec
 
 -- | Pure version of foldType.
 foldTypeP :: (Name -> r) -> (Type -> Type -> r) -> r -> Type -> r
