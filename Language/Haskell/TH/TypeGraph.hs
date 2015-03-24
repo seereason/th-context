@@ -17,6 +17,7 @@ module Language.Haskell.TH.TypeGraph
     , execStackT
       -- * Subtype traversal
     -- , visitSubtypes
+    , VertexStatus(..)
     , subtypes
     , typeGraphEdges
     , typeGraphEdgesPlus
@@ -36,12 +37,11 @@ import Control.Monad.Trans (lift)
 import Control.Monad.Writer (MonadWriter(tell), WriterT(runWriterT))
 import Data.Generics (Data, Typeable)
 import Data.Graph (Graph, Vertex, graphFromEdges)
-import Data.Map as Map (Map, member, insert, update, keys, toList)
+import Data.Map as Map (Map, insert, keys, lookup, toList, update)
 import Data.Monoid (Monoid, mempty)
 import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
-import Language.Haskell.TH.Context (expandTypes)
 import Language.Haskell.TH.Desugar (DsMonad)
 import Language.Haskell.TH.DesugarExpandType ()
 import Language.Haskell.TH.Instances ()
@@ -103,70 +103,136 @@ subtypes types = do
   (Set.fromList . Map.keys) <$> typeGraphEdges types
 
 typeGraphEdges :: forall m. DsMonad m => [Type] -> m (Map Type (Set Type))
-typeGraphEdges = typeGraphEdgesPlus (return . Just)
+typeGraphEdges = typeGraphEdgesPlus (\ _ -> return Vertex)
+
+data VertexStatus
+    = Vertex      -- ^ normal case
+    | NoVertex    -- ^ exclude from graph
+    | Sink        -- ^ out degree zero
+    | Divert Type -- ^ send edge to an alternate type
+    | Extra Type   -- ^ send edge to an additional type
 
 typeGraphEdgesPlus
     :: forall m. DsMonad m =>
-       (Type -> m (Maybe Type))
+       (Type -> m VertexStatus)
            -- ^ This function is applied to every expanded type before
            -- use, and the result is used instead.  If it returns
-           -- Nothing, no arcs are added to the graph.  The current
-           -- use case for this argument is to see if there is an
+           -- NoVertex, no vertices or edges are added to the graph.
+           -- If it returns Sink no outgoing edges are added.  The
+           -- current use case Substitute is to see if there is an
            -- instance of class @View a b@ where @a@ is the type
            -- passed to @doType@, and replace it with @b@, and use the
            -- lens returned by @View's@ method to convert between @a@
-           -- and @b@.
+           -- and @b@ (i.e. to implement the edge in the type graph.)
     -> [Type]
     -> m (Map Type (Set Type))
-typeGraphEdgesPlus augment types = do
-  execStateT (mapM_ (doUnexpandedType Nothing) types) mempty
-    where
-      doUnexpandedType :: Maybe Type -> Type -> StateT (Map Type (Set Type)) m ()
-      doUnexpandedType parent typ = expandTypes typ >>= lift . augment >>= maybe (return ()) (doType parent)
 
+typeGraphEdgesPlus augment types = do
+  execStateT (mapM_ doNode types) mempty
+    where
+      doNode :: Type -> StateT (Map Type (Set Type)) m ()
+      doNode typ = do
+        mp <- get
+        status <- lift (augment typ)
+        case Map.lookup typ mp of
+          Just _ -> return ()
+          Nothing -> do
+            case status of
+              NoVertex -> return ()
+              Sink -> addNode typ
+              (Divert typ') -> addNode typ >> addEdge typ typ' >> doNode typ'
+              (Extra typ') -> addNode typ >> doEdges typ >> addEdge typ typ' >> doNode typ'
+              Vertex -> addNode typ >> doEdges typ
+
+      addNode :: Type -> StateT (Map Type (Set Type)) m ()
+      addNode typ = modify (Map.insert typ Set.empty)
+      addEdge :: Type -> Type -> StateT (Map Type (Set Type)) m ()
+      addEdge typ typ' = modify (Map.update (Just . Set.insert typ') typ)
+
+      doEdges :: Type -> StateT (Map Type (Set Type)) m ()
+      doEdges typ@(ForallT _ _ typ') = addEdge typ typ' >> doNode typ'
+      doEdges typ@(AppT container element) =
+          addEdge typ container >> addEdge typ element >> doNode container >> doNode element
+      doEdges typ@(ConT name) = do
+        info <- qReify name
+        case info of
+          TyConI dec -> doDec dec
+          _ -> return ()
+          where
+            doDec :: Dec -> StateT (Map Type (Set Type)) m ()
+            doDec dec@(NewtypeD _ tname _ con _) = doCon tname dec con
+            doDec dec@(DataD _ tname _ cons _) = mapM_ (doCon tname dec) cons
+            doDec (TySynD _tname _tvars typ') = addEdge typ typ' >> doNode typ'
+            doDec _ = return ()
+
+            doCon :: Name -> Dec -> Con -> StateT (Map Type (Set Type)) m ()
+            doCon tname dec (ForallC _ _ con) = doCon tname dec con
+            doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map snd fields))
+            doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, typ')) fields)
+            doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
+
+            doField _tname _dec _cname (_fld, ftype) = addEdge typ ftype >> doNode ftype
+
+      doEdges typ = return (trace ("Unrecognized type: " ++ show typ) ())
+#if 0
+typeGraphEdgesPlus augment types = do
+  execStateT (mapM_ (doType Nothing) types) mempty
+    where
       doType :: Maybe Type -> Type -> StateT (Map Type (Set Type)) m ()
       doType parent typ = do
         mp <- get
-        case Map.member typ mp of
-          True -> return ()
-          False -> do
-            maybe (return ()) (\ ptype -> modify (Map.update (Just . (Set.insert typ)) ptype)) parent
-            modify (Map.insert typ Set.empty) -- Indicate that we are processing a type
-            case typ of
-              -- Is forall a. T the same node as T?  Or should there
-              -- be two nodes?  Or just a node for forall a. T?  Here
-              -- we treat it as a different node.
-              (ForallT _ _ typ') -> {- modify (Map.update (Just . (Set.insert typ')) typ) >> -} doUnexpandedType parent typ'
-              (AppT container element) -> doApply container element
-              (ConT name) -> do
-                info <- qReify name
-                case info of
-                  TyConI dec -> doDec name dec
-                  _ -> return ()
-              _ -> return (trace ("Unrecognized type: " ++ show typ) ())
+        parentStatus <- maybe (return Nothing) (\ t -> Just <$> lift (augment t)) parent
+        status <- lift (augment typ)
+        case (parentStatus, status) of
+          (Just Sink, _) -> return ()
+          (_, Divert typ') | typ /= typ' -> do
+            parentEdge
+            modify (Map.insert typ (Set.singleton typ'))
+            doType (Just typ) typ'
+          (_, NoVertex) -> return ()
+          _ -> case Map.member typ mp of
+                 True -> return ()
+                 False -> do
+                      parentEdge
+                      modify (Map.insert typ Set.empty) -- Indicate that we are processing a type
+                      case typ of
+                        -- Is forall a. T the same node as T?  Or should there
+                        -- be two nodes?  Or just a node for forall a. T?  Here
+                        -- we treat it as a different node.
+                        (ForallT _ _ typ') -> {- modify (Map.update (Just . (Set.insert typ')) typ) >> -} doType parent typ'
+                        (AppT container element) -> do
+                          doType (Just (AppT container element)) container
+                          doType (Just (AppT container element)) element
+                        (ConT name) -> do
+                          info <- qReify name
+                          case info of
+                            TyConI dec -> doDec name dec
+                            _ -> return ()
+                        _ -> return (trace ("Unrecognized type: " ++ show typ) ())
+          where
+            parentEdge = maybe (return ()) (\ ptype -> modify (Map.update (Just . (Set.insert typ)) ptype)) parent
+            doDec :: Name -> Dec -> StateT (Map Type (Set Type)) m ()
+            doDec tname dec@(NewtypeD _tname _cname _ con _) = doCon tname dec con
+            doDec tname dec@(DataD _tname _cname _ cons _) = mapM_ (doCon tname dec) cons
+            doDec tname (TySynD _tname _tvars typ') =
+                modify (Map.insert (ConT tname) (Set.singleton typ')) >>
+                doType (Just (ConT tname)) typ'
+            doDec _ _ = return ()
 
-      doApply container element = do
-        doUnexpandedType (Just (AppT container element)) container
-        doUnexpandedType (Just (AppT container element)) element
+            doCon :: Name -> Dec -> Con -> StateT (Map Type (Set Type)) m ()
+            doCon tname dec (ForallC _ _ con) = doCon tname dec con
+            doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map snd fields))
+            doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, typ')) fields)
+            doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
 
-      doDec :: DsMonad m => Name -> Dec -> StateT (Map Type (Set Type)) m ()
-      doDec tname dec@(NewtypeD _ _cname _ con _) = doCon tname dec con
-      doDec tname dec@(DataD _ _cname _ cons _) = mapM_ (doCon tname dec) cons
-      doDec _ _ = return ()
-
-      doCon :: DsMonad m => Name -> Dec -> Con -> StateT (Map Type (Set Type)) m ()
-      doCon tname dec (ForallC _ _ con) = doCon tname dec con
-      doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map snd fields))
-      doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ) -> (Right fname, typ)) fields)
-      doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
-
-      doField tname _dec _cname (_fld, typ') = doUnexpandedType (Just (ConT tname)) typ'
+            doField tname _dec _cname (_fld, ftype) = doType (Just (ConT tname)) ftype
+#endif
 
 -- | Build a graph from the result of typeGraphEdgesPlus, its edges
 -- represent the primitive lenses, and each path in the graph is a
 -- composition of lenses.
 subtypeGraph :: (DsMonad m, node ~ Type, key ~ Type) =>
-                (Type -> m (Maybe Type)) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
+                (Type -> m VertexStatus) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
 subtypeGraph augment types = do
   typeGraphEdgesPlus augment types >>= return . graphFromEdges . triples
     where
