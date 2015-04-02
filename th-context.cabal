@@ -33,7 +33,6 @@ library
     th-orphans >= 0.10.0
   ghc-options:      -Wall
   exposed-modules:  Language.Haskell.TH.Context,
-                    Language.Haskell.TH.DesugarExpandType,
                     Language.Haskell.TH.Fold,
                     Language.Haskell.TH.TypeGraph
   default-language: Haskell2010

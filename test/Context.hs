@@ -8,7 +8,6 @@ import Data.List as List (map, null)
 import Data.Set as Set (Set, fromList, difference)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (reifyInstancesWithContext, testContext, missingInstances, simpleMissingInstanceTest)
-import Language.Haskell.TH.DesugarExpandType ()
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)

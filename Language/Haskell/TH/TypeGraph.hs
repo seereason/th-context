@@ -42,8 +42,8 @@ import Data.Monoid (Monoid, mempty)
 import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
+import Language.Haskell.TH.Context (expandTypes, unExpanded)
 import Language.Haskell.TH.Desugar (DsMonad)
-import Language.Haskell.TH.DesugarExpandType ()
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax (Quasi(..))
 import Language.Haskell.TH.Fold (decName, FieldType, foldCon, foldDec, {-constructorFields, foldName, foldType, fType',-} foldTypeP, prettyField)
@@ -111,6 +111,7 @@ data VertexStatus
     | Sink        -- ^ out degree zero
     | Divert Type -- ^ send edge to an alternate type
     | Extra Type   -- ^ send edge to an additional type
+    deriving Show
 
 typeGraphEdgesPlus
     :: forall m. DsMonad m =>
@@ -128,7 +129,7 @@ typeGraphEdgesPlus
     -> m (Map Type (Set Type))
 
 typeGraphEdgesPlus augment types = do
-  execStateT (mapM_ doNode types) mempty
+  execStateT (mapM_ (\ typ -> expandTypes typ >>= doNode . unExpanded) types) mempty
     where
       doNode :: Type -> StateT (Map Type (Set Type)) m ()
       doNode typ = do
