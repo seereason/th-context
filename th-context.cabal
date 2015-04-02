@@ -41,7 +41,7 @@ library
 
 test-suite th-context-tests
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   test
+  hs-source-dirs:   test, .
   main-is:          Tests.hs
   build-depends:    array,
                     base,
@@ -49,12 +49,13 @@ test-suite th-context-tests
                     containers,
                     deepseq,
                     ghc-prim,
+                    haskell-src-exts,
                     hspec,
                     hspec-core,
                     mtl,
+                    syb,
                     template-haskell >= 2.9,
                     text,
-                    th-context,
                     th-desugar,
                     th-orphans,
                     th-reify-many
