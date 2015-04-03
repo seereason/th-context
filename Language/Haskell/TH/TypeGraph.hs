@@ -9,19 +9,14 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 module Language.Haskell.TH.TypeGraph
-    ( HasStack(withStack)
-    , StackElement(..)
-    , prettyStack
-      -- * Stack+instance map monad
-    , StackT
-    , execStackT
-      -- * Subtype traversal
-    -- , visitSubtypes
-    , VertexStatus(..)
-    , subtypes
+    ( Expanded(unExpanded)
+    , expandTypes
+    , expandType
+    , unsafeExpanded
+      -- * Subtype graph
     , typeGraphEdges
     , typeGraphEdgesPlus
-    , subtypeGraph
+    , subtypes
     ) where
 
 import Debug.Trace
@@ -29,24 +24,52 @@ import Debug.Trace
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
 #endif
--- import Control.Category ((.))
 import Control.Monad.RWS (RWST)
 import Control.Monad.Reader (ask, local, ReaderT, runReaderT)
 import Control.Monad.State (evalStateT, execStateT, modify, MonadState(get), StateT)
 import Control.Monad.Trans (lift)
 import Control.Monad.Writer (MonadWriter(tell), WriterT(runWriterT))
-import Data.Generics (Data, Typeable)
+import Data.Generics (Data, Typeable, everywhereM, mkM)
 import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.Map as Map (Map, insert, keys, lookup, toList, update)
 import Data.Monoid (Monoid, mempty)
 import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
-import Language.Haskell.TH.Context (expandTypes, unExpanded)
-import Language.Haskell.TH.Desugar (DsMonad)
+import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax (Quasi(..))
 import Language.Haskell.TH.Fold (decName, FieldType, foldCon, foldDec, {-constructorFields, foldName, foldType, fType',-} foldTypeP, prettyField)
+
+-- | Mark a value that was returned by ExpandType.  The constructor is
+-- not exported, so we know when we see it that it was produced in
+-- this module.
+newtype Expanded a = Expanded {unExpanded :: a} deriving (Eq, Ord, Show)
+
+#ifdef PHANTOM
+data Expanded = Expanded
+data Unexpanded = Unexpanded
+
+data TypeData status a = TypeData a
+#endif
+
+instance Ppr a => Ppr (Expanded a) where
+    ppr = ppr . unExpanded
+
+-- | The ubiquitous cheat.  Merging TypeGraph.hs into this module eliminates this.
+unsafeExpanded :: a -> Expanded a
+unsafeExpanded = Expanded
+
+-- | Expand Type everywhere in x and wrap it in the Expanded constructor.  Note
+-- that the everywhereM is unnecessary when @a ~ Type@ because expandType does
+-- the everywhere itself.  But it is necessary for other argument types.
+expandTypes :: (DsMonad m, Data a) => a -> m (Expanded a)
+expandTypes x = Expanded <$> everywhereM (mkM expandType) x
+
+expandType :: DsMonad m => Type -> m Type
+expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expand)
+
+type TypeGraph = Map (Expanded Type) (Set (Expanded Type))
 
 -- | The information required to extact a field value from a value.
 -- We keep a stack of these as we traverse a declaration.  Generally,
@@ -98,24 +121,25 @@ type StackT m = ReaderT [StackElement] m
 execStackT :: Monad m => StackT m a -> m a
 execStackT action = runReaderT action []
 
-subtypes :: DsMonad m => [Type] -> m (Set Type)
+-- | Return the set of (expanded) types embedded in the given type.
+subtypes :: DsMonad m => [Expanded Type] -> m (Set (Expanded Type))
 subtypes types = do
   (Set.fromList . Map.keys) <$> typeGraphEdges types
 
-typeGraphEdges :: forall m. DsMonad m => [Type] -> m (Map Type (Set Type))
+typeGraphEdges :: forall m. DsMonad m => [Expanded Type] -> m TypeGraph
 typeGraphEdges = typeGraphEdgesPlus (\ _ -> return Vertex)
 
 data VertexStatus
     = Vertex      -- ^ normal case
     | NoVertex    -- ^ exclude from graph
     | Sink        -- ^ out degree zero
-    | Divert Type -- ^ send edge to an alternate type
-    | Extra Type   -- ^ send edge to an additional type
+    | Divert (Expanded Type) -- ^ send edge to an alternate type
+    | Extra (Expanded Type)   -- ^ send edge to an additional type
     deriving Show
 
 typeGraphEdgesPlus
     :: forall m. DsMonad m =>
-       (Type -> m VertexStatus)
+       (Expanded Type -> m VertexStatus)
            -- ^ This function is applied to every expanded type before
            -- use, and the result is used instead.  If it returns
            -- NoVertex, no vertices or edges are added to the graph.
@@ -125,115 +149,64 @@ typeGraphEdgesPlus
            -- passed to @doType@, and replace it with @b@, and use the
            -- lens returned by @View's@ method to convert between @a@
            -- and @b@ (i.e. to implement the edge in the type graph.)
-    -> [Type]
-    -> m (Map Type (Set Type))
+    -> [Expanded Type]
+    -> m TypeGraph
 
 typeGraphEdgesPlus augment types = do
-  execStateT (mapM_ (\ typ -> expandTypes typ >>= doNode . unExpanded) types) mempty
+  execStateT (mapM_ doNode types) mempty
     where
-      doNode :: Type -> StateT (Map Type (Set Type)) m ()
+      doNode :: Expanded Type -> StateT TypeGraph m ()
       doNode typ = do
         mp <- get
         status <- lift (augment typ)
         case Map.lookup typ mp of
           Just _ -> return ()
           Nothing -> do
+            trace ("doNode " ++ (unwords . words . show . ppr . unExpanded $ typ) ++ ", status=" ++ show status) (return ())
             case status of
               NoVertex -> return ()
               Sink -> addNode typ
               (Divert typ') -> addNode typ >> addEdge typ typ' >> doNode typ'
-              (Extra typ') -> addNode typ >> doEdges typ >> addEdge typ typ' >> doNode typ'
-              Vertex -> addNode typ >> doEdges typ
+              (Extra typ') -> addNode typ >> doEdges (unExpanded typ) >> addEdge typ typ' >> doNode typ'
+              Vertex -> addNode typ >> doEdges (unExpanded typ)
 
-      addNode :: Type -> StateT (Map Type (Set Type)) m ()
+      addNode :: Expanded Type -> StateT TypeGraph m ()
       addNode typ = modify (Map.insert typ Set.empty)
-      addEdge :: Type -> Type -> StateT (Map Type (Set Type)) m ()
+      addEdge :: Expanded Type -> Expanded Type -> StateT TypeGraph m ()
       addEdge typ typ' = modify (Map.update (Just . Set.insert typ') typ)
 
-      doEdges :: Type -> StateT (Map Type (Set Type)) m ()
-      doEdges typ@(ForallT _ _ typ') = addEdge typ typ' >> doNode typ'
+      -- We are using Expanded constructor here unsafely - Be careful!
+      doEdges :: Type -> StateT TypeGraph m ()
+      doEdges typ@(ForallT _ _ typ') = addEdge (Expanded typ) (Expanded typ') >> doNode (Expanded typ')
       doEdges typ@(AppT container element) =
-          addEdge typ container >> addEdge typ element >> doNode container >> doNode element
+          addEdge (Expanded typ) (Expanded container) >> addEdge (Expanded typ) (Expanded element) >> doNode (Expanded container) >> doNode (Expanded element)
       doEdges typ@(ConT name) = do
         info <- qReify name
         case info of
           TyConI dec -> doDec dec
           _ -> return ()
           where
-            doDec :: Dec -> StateT (Map Type (Set Type)) m ()
+            doDec :: Dec -> StateT TypeGraph m ()
             doDec dec@(NewtypeD _ tname _ con _) = doCon tname dec con
             doDec dec@(DataD _ tname _ cons _) = mapM_ (doCon tname dec) cons
-            doDec (TySynD _tname _tvars typ') = addEdge typ typ' >> doNode typ'
+            doDec (TySynD _tname _tvars typ') = addEdge (Expanded typ) (Expanded typ') >> doNode (Expanded typ')
             doDec _ = return ()
 
-            doCon :: Name -> Dec -> Con -> StateT (Map Type (Set Type)) m ()
+            doCon :: Name -> Dec -> Con -> StateT TypeGraph m ()
             doCon tname dec (ForallC _ _ con) = doCon tname dec con
             doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map snd fields))
             doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, typ')) fields)
             doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
 
-            doField _tname _dec _cname (_fld, ftype) = addEdge typ ftype >> doNode ftype
+            doField _tname _dec _cname (_fld, ftype) = addEdge (Expanded typ) (Expanded ftype) >> doNode (Expanded ftype)
 
       doEdges typ = return (trace ("Unrecognized type: " ++ show typ) ())
-#if 0
-typeGraphEdgesPlus augment types = do
-  execStateT (mapM_ (doType Nothing) types) mempty
-    where
-      doType :: Maybe Type -> Type -> StateT (Map Type (Set Type)) m ()
-      doType parent typ = do
-        mp <- get
-        parentStatus <- maybe (return Nothing) (\ t -> Just <$> lift (augment t)) parent
-        status <- lift (augment typ)
-        case (parentStatus, status) of
-          (Just Sink, _) -> return ()
-          (_, Divert typ') | typ /= typ' -> do
-            parentEdge
-            modify (Map.insert typ (Set.singleton typ'))
-            doType (Just typ) typ'
-          (_, NoVertex) -> return ()
-          _ -> case Map.member typ mp of
-                 True -> return ()
-                 False -> do
-                      parentEdge
-                      modify (Map.insert typ Set.empty) -- Indicate that we are processing a type
-                      case typ of
-                        -- Is forall a. T the same node as T?  Or should there
-                        -- be two nodes?  Or just a node for forall a. T?  Here
-                        -- we treat it as a different node.
-                        (ForallT _ _ typ') -> {- modify (Map.update (Just . (Set.insert typ')) typ) >> -} doType parent typ'
-                        (AppT container element) -> do
-                          doType (Just (AppT container element)) container
-                          doType (Just (AppT container element)) element
-                        (ConT name) -> do
-                          info <- qReify name
-                          case info of
-                            TyConI dec -> doDec name dec
-                            _ -> return ()
-                        _ -> return (trace ("Unrecognized type: " ++ show typ) ())
-          where
-            parentEdge = maybe (return ()) (\ ptype -> modify (Map.update (Just . (Set.insert typ)) ptype)) parent
-            doDec :: Name -> Dec -> StateT (Map Type (Set Type)) m ()
-            doDec tname dec@(NewtypeD _tname _cname _ con _) = doCon tname dec con
-            doDec tname dec@(DataD _tname _cname _ cons _) = mapM_ (doCon tname dec) cons
-            doDec tname (TySynD _tname _tvars typ') =
-                modify (Map.insert (ConT tname) (Set.singleton typ')) >>
-                doType (Just (ConT tname)) typ'
-            doDec _ _ = return ()
-
-            doCon :: Name -> Dec -> Con -> StateT (Map Type (Set Type)) m ()
-            doCon tname dec (ForallC _ _ con) = doCon tname dec con
-            doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map snd fields))
-            doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, typ')) fields)
-            doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
-
-            doField tname _dec _cname (_fld, ftype) = doType (Just (ConT tname)) ftype
-#endif
 
 -- | Build a graph from the result of typeGraphEdgesPlus, its edges
 -- represent the primitive lenses, and each path in the graph is a
 -- composition of lenses.
-subtypeGraph :: (DsMonad m, node ~ Type, key ~ Type) =>
-                (Type -> m VertexStatus) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
+subtypeGraph :: (DsMonad m, node ~ Expanded Type, key ~ Expanded Type) =>
+                (Expanded Type -> m VertexStatus) -> [Expanded Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
 subtypeGraph augment types = do
   typeGraphEdgesPlus augment types >>= return . graphFromEdges . triples
     where

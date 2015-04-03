@@ -10,9 +10,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 module Language.Haskell.TH.Context
-    ( expandTypes
-    , Expanded(unExpanded)
-    , InstMap
+    ( InstMap
     , evalInstMap
     , reifyInstancesWithContext -- was instances
     , testInstance
@@ -25,35 +23,16 @@ module Language.Haskell.TH.Context
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (filterM)
 import Control.Monad.State (MonadState, StateT, get, modify, evalStateT)
-import Data.Generics (Data, everywhere, mkT, everywhereM, mkM)
+import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert)
 import Data.Maybe (catMaybes)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
-import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
+import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
-
--- | Mark a value that was returned by ExpandType.  The constructor is
--- not exported, so we know when we see it that it was produced in
--- this module.
-newtype Expanded a = Expanded {unExpanded :: a} deriving (Eq, Ord)
-
--- | Extend the Quasi class to require a function for expanding a TH Type.  The
--- th-desugar package has a function that can be used to implement this, but I
--- created the class to avoid becoming too tightly coupled with that package:
--- @@
---  import Language.Haskell.TH.Desugar as DS
---  instance DsMonad m => ExpandType m where
---    expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expandType)
--- @@
--- Extend the Quasi type to require a function for expanding a TH Type.
-expandTypes :: (DsMonad m, Data a) => a -> m (Expanded a)
-expandTypes x = Expanded <$> everywhereM (mkM expandType) x
-
-expandType :: DsMonad m => Type -> m Type
-expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expand)
+import Language.Haskell.TH.TypeGraph (Expanded(unExpanded), unsafeExpanded, expandTypes)
 
 type InstMap = Map (Expanded Pred) [InstanceDec]
 
@@ -125,7 +104,7 @@ testContext context =
 simplifyContext :: (DsMonad m, MonadState InstMap m) => [Expanded Pred] -> m [Expanded Pred]
 simplifyContext context =
     do let context' = concat $ map (unify . unExpanded) context
-       let context'' = map Expanded $ foldl simplifyPredicate context' context'
+       let context'' = map unsafeExpanded $ foldl simplifyPredicate context' context'
        if (context'' == context) then return context'' else simplifyContext context''
 
 -- | Try to simplify the context by eliminating of one of the predicates.

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 module Context where
@@ -8,7 +9,9 @@ import Data.List as List (map, null)
 import Data.Set as Set (Set, fromList, difference)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (reifyInstancesWithContext, testContext, missingInstances, simpleMissingInstanceTest)
+import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
+import Language.Haskell.TH.TypeGraph (expandType, expandTypes, unExpanded)
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
 import Test.Hspec.Core.Spec (SpecM)
@@ -20,6 +23,12 @@ tests = do
   it "can run the Q monad" $ do
      typ <- runQ [t|Int|]
      typ `shouldBe` ConT ''Int
+
+  -- String becomes [Char], Maybe String becomes Maybe [Char]
+  it "expands types as expected" $ do
+     (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |] ])
+     let expanded = $(withLocalDeclarations [] (runQ (sequence [ [t|String|], [t|Maybe String|] ]) >>= mapM expandType {- >>= return . map unExpanded -}) >>= runQ . lift)
+     expanded `shouldBe` expected
 
   -- Test the behavior of th-reify-many
   it "can tell that there is an instance NFData Char" $
