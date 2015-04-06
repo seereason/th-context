@@ -11,7 +11,7 @@ import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Fold (typeArity)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
-import Language.Haskell.TH.TypeGraph (expandTypes, unExpanded, subtypes, typeGraphEdges)
+import Language.Haskell.TH.TypeGraph (expandTypes, runExpanded, subtypes, typeGraphEdges)
 import Test.Hspec hiding (runIO)
 import Test.Hspec.Core.Spec (SpecM)
 
@@ -24,7 +24,7 @@ tests = do
                                 runQ [t|Type|] >>=
                                 expandTypes >>=
                                 subtypes . (: []) >>=
-                                runQ . lift . map unExpanded . Set.toList)) subtypesOfType
+                                runQ . lift . map runExpanded . Set.toList)) subtypesOfType
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Type" $ do
@@ -56,7 +56,7 @@ tests = do
                                 runQ [t|Dec|] >>=
                                 expandTypes >>=
                                 subtypes . (: []) >>=
-                                filterM (\ t -> typeArity (unExpanded t) >>= \ a -> return (a == 0)) . Set.toList >>=
+                                filterM (\ t -> typeArity (runExpanded t) >>= \ a -> return (a == 0)) . Set.toList >>=
                                 runQ . lift . map (unwords . words . pprint))) arity0SubtypesOfDec
         `shouldBe` noDifferences
 

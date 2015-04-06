@@ -145,21 +145,21 @@ foldCon fldFn (ForallC _ _ con) = foldCon fldFn con
 -- wrapper is a single arity one constructor, an enum is
 -- several arity zero constructors, and so on.
 foldShape :: Monad m =>
-             (Dec -> [(Con, [FieldType])] -> m r) -- dataFn - several constructors not all of which are arity zero
-          -> (Dec -> Con -> [FieldType] -> m r)   -- recordFn - one constructor which has arity greater than one
-          -> (Dec -> [Con] -> m r)                -- enumFn - all constructors are of arity zero
-          -> (Dec -> Con -> FieldType -> m r)     -- wrapperFn - one constructor of arity one
-          -> Dec -> [Con] -> m r
-foldShape dataFn recordFn enumFn wrapperFn dec cons =
+             ([(Con, [FieldType])] -> m r) -- dataFn - several constructors not all of which are arity zero
+          -> (Con -> [FieldType] -> m r)   -- recordFn - one constructor which has arity greater than one
+          -> ([Con] -> m r)                -- enumFn - all constructors are of arity zero
+          -> (Con -> FieldType -> m r)     -- wrapperFn - one constructor of arity one
+          -> [Con] -> m r
+foldShape dataFn recordFn enumFn wrapperFn cons =
     case zip cons (map constructorFields cons) :: [(Con, [FieldType])] of
       [(con, [fld])] ->
-          wrapperFn dec con fld
+          wrapperFn con fld
       [(con, flds)] ->
-          recordFn dec con flds
+          recordFn con flds
       pairs | all (== 0) (map (length . snd) pairs) ->
-          enumFn dec (map fst pairs)
+          enumFn (map fst pairs)
       pairs ->
-          dataFn dec pairs
+          dataFn pairs
 
 pprint' :: Ppr a => a -> [Char]
 pprint' typ = unwords $ words $ pprint typ

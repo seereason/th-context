@@ -32,7 +32,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
-import Language.Haskell.TH.TypeGraph (Expanded(unExpanded), unsafeExpanded, expandTypes)
+import Language.Haskell.TH.TypeGraph (Expanded(runExpanded), unsafeExpanded, expandTypes)
 
 type InstMap = Map (Expanded Pred) [InstanceDec]
 
@@ -97,13 +97,13 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- vacuous predicates, and unification.
 testContext :: (DsMonad m, MonadState InstMap m) => [Expanded Pred] -> m Bool
 testContext context =
-    and <$> (mapM (consistent . unExpanded) =<< simplifyContext context)
+    and <$> (mapM (consistent . runExpanded) =<< simplifyContext context)
 
 -- | Perform type expansion on the predicates, then simplify using
 -- variable substitution and eliminate vacuous equivalences.
 simplifyContext :: (DsMonad m, MonadState InstMap m) => [Expanded Pred] -> m [Expanded Pred]
 simplifyContext context =
-    do let context' = concat $ map (unify . unExpanded) context
+    do let context' = concat $ map (unify . runExpanded) context
        let context'' = map unsafeExpanded $ foldl simplifyPredicate context' context'
        if (context'' == context) then return context'' else simplifyContext context''
 

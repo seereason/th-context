@@ -11,7 +11,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Context (reifyInstancesWithContext, testContext, missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
-import Language.Haskell.TH.TypeGraph (expandType, expandTypes, unExpanded)
+import Language.Haskell.TH.TypeGraph (expandType)
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
 import Test.Hspec.Core.Spec (SpecM)
@@ -27,7 +27,7 @@ tests = do
   -- String becomes [Char], Maybe String becomes Maybe [Char]
   it "expands types as expected" $ do
      (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |] ])
-     let expanded = $(withLocalDeclarations [] (runQ (sequence [ [t|String|], [t|Maybe String|] ]) >>= mapM expandType {- >>= return . map unExpanded -}) >>= runQ . lift)
+     let expanded = $(withLocalDeclarations [] (runQ (sequence [ [t|String|], [t|Maybe String|] ]) >>= mapM expandType {- >>= return . map runExpanded -}) >>= runQ . lift)
      expanded `shouldBe` expected
 
   -- Test the behavior of th-reify-many

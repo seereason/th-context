@@ -9,7 +9,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 module Language.Haskell.TH.TypeGraph
-    ( Expanded(unExpanded)
+    ( Expanded(runExpanded)
     , expandTypes
     , expandType
     , unsafeExpanded
@@ -44,7 +44,7 @@ import Language.Haskell.TH.Fold (decName, FieldType, foldCon, foldDec, {-constru
 -- | Mark a value that was returned by ExpandType.  The constructor is
 -- not exported, so we know when we see it that it was produced in
 -- this module.
-newtype Expanded a = Expanded {unExpanded :: a} deriving (Eq, Ord, Show)
+newtype Expanded a = Expanded {runExpanded :: a} deriving (Eq, Ord, Show)
 
 #ifdef PHANTOM
 data Expanded = Expanded
@@ -54,7 +54,7 @@ data TypeData status a = TypeData a
 #endif
 
 instance Ppr a => Ppr (Expanded a) where
-    ppr = ppr . unExpanded
+    ppr = ppr . runExpanded
 
 -- | The ubiquitous cheat.  Merging TypeGraph.hs into this module eliminates this.
 unsafeExpanded :: a -> Expanded a
@@ -162,13 +162,13 @@ typeGraphEdgesPlus augment types = do
         case Map.lookup typ mp of
           Just _ -> return ()
           Nothing -> do
-            trace ("doNode " ++ (unwords . words . show . ppr . unExpanded $ typ) ++ ", status=" ++ show status) (return ())
+            trace ("doNode " ++ (unwords . words . show . ppr . runExpanded $ typ) ++ ", status=" ++ show status) (return ())
             case status of
               NoVertex -> return ()
               Sink -> addNode typ
               (Divert typ') -> addNode typ >> addEdge typ typ' >> doNode typ'
-              (Extra typ') -> addNode typ >> doEdges (unExpanded typ) >> addEdge typ typ' >> doNode typ'
-              Vertex -> addNode typ >> doEdges (unExpanded typ)
+              (Extra typ') -> addNode typ >> doEdges (runExpanded typ) >> addEdge typ typ' >> doNode typ'
+              Vertex -> addNode typ >> doEdges (runExpanded typ)
 
       addNode :: Expanded Type -> StateT TypeGraph m ()
       addNode typ = modify (Map.insert typ Set.empty)
