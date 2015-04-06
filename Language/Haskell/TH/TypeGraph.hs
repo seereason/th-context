@@ -13,6 +13,7 @@ module Language.Haskell.TH.TypeGraph
     , expandTypes
     , expandType
     , unsafeExpanded
+    , typeArity
       -- * Subtype graph
     , typeGraphEdges
     , typeGraphEdgesPlus
@@ -24,6 +25,7 @@ import Debug.Trace
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
 #endif
+import Control.Monad.Identity (Identity(Identity), runIdentity)
 import Control.Monad.RWS (RWST)
 import Control.Monad.Reader (ask, local, ReaderT, runReaderT)
 import Control.Monad.State (evalStateT, execStateT, modify, MonadState(get), StateT)
@@ -38,8 +40,8 @@ import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
 import Language.Haskell.TH.Instances ()
-import Language.Haskell.TH.Syntax (Quasi(..))
-import Language.Haskell.TH.Fold (decName, FieldType, foldCon, foldDec, {-constructorFields, foldName, foldType, fType',-} foldTypeP, prettyField)
+import Language.Haskell.TH.Syntax (Quasi(..), StrictType, VarStrictType)
+-- import Language.Haskell.TH.Fold (decName, FieldType, foldCon, foldDec, {-constructorFields, foldName, foldType, fType',-} foldTypeP, prettyField)
 
 -- | Mark a value that was returned by ExpandType.  The constructor is
 -- not exported, so we know when we see it that it was produced in
@@ -70,6 +72,8 @@ expandType :: DsMonad m => Type -> m Type
 expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expand)
 
 type TypeGraph = Map (Expanded Type) (Set (Expanded Type))
+
+type FieldType = (Int, Either StrictType VarStrictType)
 
 -- | The information required to extact a field value from a value.
 -- We keep a stack of these as we traverse a declaration.  Generally,
@@ -122,6 +126,7 @@ execStackT :: Monad m => StackT m a -> m a
 execStackT action = runReaderT action []
 
 -- | Return the set of (expanded) types embedded in the given type.
+-- This is just the nodes of the type graph.
 subtypes :: DsMonad m => [Expanded Type] -> m (Set (Expanded Type))
 subtypes types = do
   (Set.fromList . Map.keys) <$> typeGraphEdges types
@@ -220,3 +225,89 @@ adjacentTypes t@(ConT _) = [t]
 adjacentTypes t@(VarT _) = [t]
 adjacentTypes _ = []
 -}
+
+typeArity :: Quasi m => Type -> m Int
+typeArity typ =
+    foldType
+      (foldName
+         decArity
+         (\_ _ _ -> return 0)
+         infoArity)
+      (\t _  -> typeArity t >>= \ n -> return $ n - 1)
+      (return $ case typ of
+                  ListT -> 1
+                  TupleT n -> n
+                  VarT _ -> 1
+                  _ -> error $ "typeArity - unexpected type: " ++ show typ)
+      typ
+    where
+      decArity (DataD _ _ vs _ _) = return $ length vs
+      decArity (NewtypeD _ _ vs _ _) = return $ length vs
+      decArity (TySynD _ vs t) = typeArity t >>= \ n -> return $ n + length vs
+      decArity (FamilyD _ _ vs mk) = return $ {- not sure what to do with the kind mk here -} length vs
+      decArity dec = error $ "decArity - unexpected: " ++ show dec
+      infoArity (FamilyI dec _) = decArity dec
+
+-- | Combine a decFn and a primFn to make a nameFn in the Quasi monad.
+-- This is used to build the first argument to the foldType function
+-- when we need to know whether the name refers to a declared or a
+-- primitive type.
+foldName :: Quasi m =>
+            (Dec -> m r)
+         -> (Name -> Int -> Bool -> m r)
+         -> (Info -> m r)
+         -> Name -> m r
+foldName decFn primFn otherFn name = do
+  info <- qReify name
+  case info of
+    (TyConI dec) ->
+        decFn dec
+    (PrimTyConI a b c) -> primFn a b c
+    _ -> otherFn info
+
+-- | Dispatch on the different constructors of the Dec type.
+foldDec :: Monad m =>
+           (Type -> m r)
+        -> ([Con] -> m r)
+        -> Dec -> m r
+foldDec typeFn shapeFn dec =
+    case dec of
+      TySynD _name _ typ -> typeFn typ
+      NewtypeD _ _ _ con _ -> shapeFn [con]
+      DataD _ _ _ cons _ -> shapeFn cons
+      _ -> error $ "foldDec - unexpected: " ++ show dec
+
+decName :: Dec -> Name
+decName (NewtypeD _ name _ _ _) = name
+decName (DataD _ name _ _ _) = name
+decName (TySynD name _ _) = name
+decName x = error $ "decName - unimplemented: " ++ show x
+
+-- | Deconstruct a constructor
+foldCon :: (Name -> [FieldType] -> r) -> Con -> r
+foldCon fldFn (NormalC name ts) = fldFn name $ zip [1..] (map Left ts)
+foldCon fldFn (RecC name ts) = fldFn name (zip [1..] (map Right ts))
+foldCon fldFn (InfixC t1 name t2) = fldFn name [(1, Left t1), (2, Left t2)]
+foldCon fldFn (ForallC _ _ con) = foldCon fldFn con
+
+prettyField :: FieldType -> String
+prettyField fld = maybe (show (fPos fld)) nameBase (fName fld)
+
+-- | Pure version of foldType.
+foldTypeP :: (Name -> r) -> (Type -> Type -> r) -> r -> Type -> r
+foldTypeP nfn afn ofn typ = runIdentity $ foldType (\ n -> Identity $ nfn n) (\ t1 t2 -> Identity $ afn t1 t2) (Identity ofn) typ
+
+fPos :: FieldType -> Int
+fPos (n, _) = n
+
+fName :: FieldType -> Maybe Name
+fName (_, (Left _)) = Nothing
+fName (_, (Right (name, _, _))) = Just name
+
+-- | Dispatch on the constructors of type Type.  This ignores the
+-- "ForallT" constructor, it just uses the embeded Type field.
+foldType :: Monad m => (Name -> m r) -> (Type -> Type -> m r) -> m r -> Type -> m r
+foldType nfn afn ofn (ForallT _ _ typ) = foldType nfn afn ofn typ
+foldType nfn _ _ (ConT name) = nfn name
+foldType _ afn _ (AppT t1 t2) = afn t1 t2
+foldType _ _ ofn _ = ofn
