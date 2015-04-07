@@ -10,7 +10,6 @@ module Language.Haskell.TH.Fold
     , prettyField
       -- * Folds
     , foldName
-    , foldCon
     , foldShape
     -- * Constructor deconstructors
     , constructorName
@@ -115,7 +114,6 @@ foldDec typeFn shapeFn dec =
 -- | Dispatch on whether a type is a type synonym or a "real" type, newtype or data.
 foldDecP :: (Type -> r) -> ([Con] -> r) -> Dec -> r
 foldDecP typeFn shapeFn dec = runIdentity $ foldDec (\ t -> Identity $ typeFn t) (\ cs -> Identity $ shapeFn cs) dec
-#endif
 
 -- | Deconstruct a constructor
 foldCon :: (Name -> [FieldType] -> r) -> Con -> r
@@ -123,6 +121,7 @@ foldCon fldFn (NormalC name ts) = fldFn name $ map (uncurry FieldType) (zip [1..
 foldCon fldFn (RecC name ts) = fldFn name (map (uncurry FieldType) (zip [1..] (map Right ts)))
 foldCon fldFn (InfixC t1 name t2) = fldFn name (map (uncurry FieldType) [(1, Left t1), (2, Left t2)])
 foldCon fldFn (ForallC _ _ con) = foldCon fldFn con
+#endif
 
 -- indent :: String -> String -> String
 -- indent i s = intercalate "\n" (map (i ++) (lines s))
@@ -152,10 +151,16 @@ pprint' :: Ppr a => a -> [Char]
 pprint' typ = unwords $ words $ pprint typ
 
 constructorFields :: Con -> [FieldType]
-constructorFields = foldCon (\ _ x -> x)
+constructorFields (ForallC _ _ con) = constructorFields con
+constructorFields (NormalC _ ts) = map (uncurry FieldType) (zip [1..] (map Left ts))
+constructorFields (RecC _ ts) = map (uncurry FieldType) (zip [1..] (map Right ts))
+constructorFields (InfixC t1 _ t2) = map (uncurry FieldType) [(1, Left t1), (2, Left t2)]
 
 constructorName :: Con -> Name
-constructorName = foldCon (\ x _ -> x)
+constructorName (ForallC _ _ con) = constructorName con
+constructorName (NormalC name _) = name
+constructorName (RecC name _) = name
+constructorName (InfixC _ name _) = name
 
 -- | Returns true if any of the fields of the declaration are
 -- primitive types.  Does not recurse into sub-types, but needs
@@ -211,4 +216,7 @@ instance HasPrimitiveType Dec where
     hasPrimitiveType dec = error $ "hasPrimiveType: " ++ show dec
 
 instance HasPrimitiveType Con where
-    hasPrimitiveType = foldCon (\ _name flds -> or <$> mapM (hasPrimitiveType . fType) flds)
+    hasPrimitiveType (ForallC _ _ con) = hasPrimitiveType con
+    hasPrimitiveType (NormalC _ ts) = or <$> mapM (hasPrimitiveType . snd) ts
+    hasPrimitiveType (RecC _ ts) = or <$> mapM (\ (_, _, t) -> hasPrimitiveType t) ts
+    hasPrimitiveType (InfixC t1 _ t2) = or <$> mapM (hasPrimitiveType . snd) [t1, t2]
