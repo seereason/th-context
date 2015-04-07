@@ -1,13 +1,11 @@
-{-# LANGUAGE CPP, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE CPP, DeriveDataTypeable, RankNTypes, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Some hopefully straightforward utility types, functions, and instances for template haskell.
 module Language.Haskell.TH.Fold
     ( decName
       -- * Constructor fields
-    , FieldType
+    , FieldType(FieldType, fPos, fNameAndType)
     , fName
-    , fPos
-    , fType'
     , fType
     , prettyField
       -- * Folds
@@ -29,6 +27,8 @@ module Language.Haskell.TH.Fold
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Identity (Identity(Identity), runIdentity)
+import Data.Data (Data)
+import Data.Typeable (Typeable)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar ({- instances -})
@@ -40,28 +40,21 @@ decName (DataD _ name _ _ _) = name
 decName (TySynD name _ _) = name
 decName x = error $ "decName - unimplemented: " ++ show x
 
-type FieldType = (Int, Either StrictType VarStrictType)
+data FieldType
+    = FieldType
+      { fPos :: Int
+      , fNameAndType :: Either StrictType VarStrictType }
+    deriving (Eq, Ord, Show, Data, Typeable)
 
 fName :: FieldType -> Maybe Name
-fName (_, (Left _)) = Nothing
-fName (_, (Right (name, _, _))) = Just name
-
-fPos :: FieldType -> Int
-fPos (n, _) = n
+fName = either (\ (_, _) -> Nothing) (\ (x, _, _) -> Just x) . fNameAndType
 
 prettyField :: FieldType -> String
 prettyField fld = maybe (show (fPos fld)) nameBase (fName fld)
 
 -- | fType' with leading foralls stripped
 fType :: FieldType -> Type
-fType (n, Left (strict, ForallT _ _ typ)) = fType (n, Left (strict, typ))
-fType (n, Right (name, strict, ForallT _ _ typ)) = fType (n, Right (name, strict, typ))
-fType x = fType' x
-
-fType' :: FieldType -> Type
--- fType' (_, (Left (_, typ))) = typ
--- fType' (_, (Right (_, _, typ))) = typ
-fType' = either (\ (_, typ) -> typ) (\ (_, _, typ) -> typ) . snd
+fType = either (\ (_, x) -> x) (\ (_, _, x) -> x) . fNameAndType
 
 -- | Dispatch on the constructors of type Type.  This ignores the
 -- "ForallT" constructor, it just uses the embeded Type field.
@@ -89,9 +82,10 @@ typeArity typ =
       decArity (DataD _ _ vs _ _) = return $ length vs
       decArity (NewtypeD _ _ vs _ _) = return $ length vs
       decArity (TySynD _ vs t) = typeArity t >>= \ n -> return $ n + length vs
-      decArity (FamilyD _ _ vs mk) = return $ {- not sure what to do with the kind mk here -} length vs
+      decArity (FamilyD _ _ vs _mk) = return $ {- not sure what to do with the kind mk here -} length vs
       decArity dec = error $ "decArity - unexpected: " ++ show dec
       infoArity (FamilyI dec _) = decArity dec
+      infoArity info = error $ "typeArity - unexpected: " ++ pprint' info
 
 -- | Pure version of foldType.
 foldTypeP :: (Name -> r) -> (Type -> Type -> r) -> r -> Type -> r
@@ -132,9 +126,9 @@ foldDecP typeFn shapeFn dec = runIdentity $ foldDec (\ t -> Identity $ typeFn t)
 
 -- | Deconstruct a constructor
 foldCon :: (Name -> [FieldType] -> r) -> Con -> r
-foldCon fldFn (NormalC name ts) = fldFn name $ zip [1..] (map Left ts)
-foldCon fldFn (RecC name ts) = fldFn name (zip [1..] (map Right ts))
-foldCon fldFn (InfixC t1 name t2) = fldFn name [(1, Left t1), (2, Left t2)]
+foldCon fldFn (NormalC name ts) = fldFn name $ map (uncurry FieldType) (zip [1..] (map Left ts))
+foldCon fldFn (RecC name ts) = fldFn name (map (uncurry FieldType) (zip [1..] (map Right ts)))
+foldCon fldFn (InfixC t1 name t2) = fldFn name (map (uncurry FieldType) [(1, Left t1), (2, Left t2)])
 foldCon fldFn (ForallC _ _ con) = foldCon fldFn con
 
 -- indent :: String -> String -> String

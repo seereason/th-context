@@ -41,19 +41,11 @@ import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax (Quasi(..), StrictType, VarStrictType)
--- import Language.Haskell.TH.Fold (decName, FieldType, foldCon, foldDec, {-constructorFields, foldName, foldType, fType',-} foldTypeP, prettyField)
 
 -- | Mark a value that was returned by ExpandType.  The constructor is
 -- not exported, so we know when we see it that it was produced in
 -- this module.
 newtype Expanded a = Expanded {runExpanded :: a} deriving (Eq, Ord, Show)
-
-#ifdef PHANTOM
-data Expanded = Expanded
-data Unexpanded = Unexpanded
-
-data TypeData status a = TypeData a
-#endif
 
 instance Ppr a => Ppr (Expanded a) where
     ppr = ppr . runExpanded
@@ -72,58 +64,6 @@ expandType :: DsMonad m => Type -> m Type
 expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expand)
 
 type TypeGraph = Map (Expanded Type) (Set (Expanded Type))
-
-type FieldType = (Int, Either StrictType VarStrictType)
-
--- | The information required to extact a field value from a value.
--- We keep a stack of these as we traverse a declaration.  Generally,
--- we only need the field names.
-data StackElement = StackElement FieldType Con Dec deriving (Eq, Show, Data, Typeable)
-
-class Monad m => HasStack m where
-    withStack :: ([StackElement] -> m a) -> m a -- Better name: askStack
-    push :: FieldType -> Con -> Dec -> m a -> m a -- Better name: localStack
-
-instance (Quasi m, Monoid w) => HasStack (RWST [StackElement] w s m) where
-    withStack f = ask >>= f
-    push fld con dec action = local (\ stk -> StackElement fld con dec : stk) action
-
-instance HasStack m => HasStack (StateT s m) where
-    withStack f = lift (withStack return) >>= f
-    push fld con dec action = get >>= \ st -> lift $ push fld con dec (evalStateT action st)
-
-instance Quasi m => HasStack (ReaderT [StackElement] m) where
-    withStack f = ask >>= f
-    push fld con dec action = local (\ stk -> StackElement fld con dec : stk) action
-
-instance (HasStack m, Monoid w) => HasStack (WriterT w m) where
-    withStack f = lift (withStack return) >>= f
-    push fld con dec action =
-        do (r, w') <- lift $ push fld con dec (runWriterT action)
-           tell w'
-           return r
-
-prettyStack :: [StackElement] -> String
-prettyStack = prettyStack' . reverse
-    where
-      prettyStack' :: [StackElement] -> String
-      prettyStack' [] = "(empty)"
-      prettyStack' (x : xs) = "[" ++ prettyElt x ++ prettyTail xs ++ "]"
-      prettyTail [] = ""
-      prettyTail (x : xs) = " → " ++ prettyElt x ++ prettyTail xs
-      prettyElt (StackElement fld con dec) =
-          foldDec prettyType (\ _ -> nameBase (decName dec)) dec ++ ":" ++
-          foldCon (\ name _ -> nameBase name) con ++ "." ++
-          prettyField fld
-      prettyType typ = foldTypeP nameBase
-                                 (\ t1 t2 -> "((" ++ prettyType t1 ++ ") (" ++ prettyType t2 ++ "))")
-                                 ("(" ++ show typ ++ ")")
-                                 typ
-
-type StackT m = ReaderT [StackElement] m
-
-execStackT :: Monad m => StackT m a -> m a
-execStackT action = runReaderT action []
 
 -- | Return the set of (expanded) types embedded in the given type.
 -- This is just the nodes of the type graph.
@@ -205,7 +145,7 @@ typeGraphEdgesPlus augment types = do
 
             doField _tname _dec _cname (_fld, ftype) = addEdge (Expanded typ) (Expanded ftype) >> doNode (Expanded ftype)
 
-      doEdges typ = return (trace ("Unrecognized type: " ++ show typ) ())
+      doEdges typ = return (trace ("Unrecognized type: " ++ pprint' typ) ())
 
 -- | Build a graph from the result of typeGraphEdgesPlus, its edges
 -- represent the primitive lenses, and each path in the graph is a
@@ -217,36 +157,82 @@ subtypeGraph augment types = do
     where
       triples mp = map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
 
-{-
-adjacentTypes :: DsMonad m => Type -> m (Type, [Type])
-adjacentTypes (ForallT _ _ typ) = adjacentTypes typ
-adjacentTypes (AppT t1 t2) = [t1, t2]
-adjacentTypes t@(ConT _) = [t]
-adjacentTypes t@(VarT _) = [t]
-adjacentTypes _ = []
--}
-
 typeArity :: Quasi m => Type -> m Int
-typeArity typ =
-    foldType
-      (foldName
-         decArity
-         (\_ _ _ -> return 0)
-         infoArity)
-      (\t _  -> typeArity t >>= \ n -> return $ n - 1)
-      (return $ case typ of
-                  ListT -> 1
-                  TupleT n -> n
-                  VarT _ -> 1
-                  _ -> error $ "typeArity - unexpected type: " ++ show typ)
-      typ
+typeArity (ForallT _ _ typ) = typeArity typ
+typeArity (VarT _) = return 1
+typeArity ListT = return 1
+typeArity (TupleT n) = return n
+typeArity (AppT t _) = typeArity t >>= \ n -> return $ n - 1
+typeArity (ConT name) =
+    do info <- qReify name
+       case info of
+         (TyConI dec) -> decArity dec
+         (PrimTyConI _ _ _) -> return 0
+         (FamilyI dec _) -> decArity dec
+         _ -> error $ "typeArity - unexpected type: " ++ pprint name ++ " -> " ++ pprint' info
     where
       decArity (DataD _ _ vs _ _) = return $ length vs
       decArity (NewtypeD _ _ vs _ _) = return $ length vs
       decArity (TySynD _ vs t) = typeArity t >>= \ n -> return $ n + length vs
       decArity (FamilyD _ _ vs mk) = return $ {- not sure what to do with the kind mk here -} length vs
-      decArity dec = error $ "decArity - unexpected: " ++ show dec
-      infoArity (FamilyI dec _) = decArity dec
+      decArity dec = error $ "decArity - unexpected: " ++ pprint' dec
+typeArity typ = error $ "typeArity - unexpected type: " ++ pprint' typ
+
+pprint' :: Ppr a => a -> [Char]
+pprint' typ = unwords $ words $ pprint typ
+
+{-
+type FieldType = (Int, Either StrictType VarStrictType)
+
+-- | The information required to extact a field value from a value.
+-- We keep a stack of these as we traverse a declaration.  Generally,
+-- we only need the field names.
+data StackElement = StackElement FieldType Con Dec deriving (Eq, Show, Data, Typeable)
+
+class Monad m => HasStack m where
+    withStack :: ([StackElement] -> m a) -> m a -- Better name: askStack
+    push :: FieldType -> Con -> Dec -> m a -> m a -- Better name: localStack
+
+instance (Quasi m, Monoid w) => HasStack (RWST [StackElement] w s m) where
+    withStack f = ask >>= f
+    push fld con dec action = local (\ stk -> StackElement fld con dec : stk) action
+
+instance HasStack m => HasStack (StateT s m) where
+    withStack f = lift (withStack return) >>= f
+    push fld con dec action = get >>= \ st -> lift $ push fld con dec (evalStateT action st)
+
+instance Quasi m => HasStack (ReaderT [StackElement] m) where
+    withStack f = ask >>= f
+    push fld con dec action = local (\ stk -> StackElement fld con dec : stk) action
+
+instance (HasStack m, Monoid w) => HasStack (WriterT w m) where
+    withStack f = lift (withStack return) >>= f
+    push fld con dec action =
+        do (r, w') <- lift $ push fld con dec (runWriterT action)
+           tell w'
+           return r
+
+prettyStack :: [StackElement] -> String
+prettyStack = prettyStack' . reverse
+    where
+      prettyStack' :: [StackElement] -> String
+      prettyStack' [] = "(empty)"
+      prettyStack' (x : xs) = "[" ++ prettyElt x ++ prettyTail xs ++ "]"
+      prettyTail [] = ""
+      prettyTail (x : xs) = " → " ++ prettyElt x ++ prettyTail xs
+      prettyElt (StackElement fld con dec) =
+          foldDec prettyType (\ _ -> nameBase (decName dec)) dec ++ ":" ++
+          foldCon (\ name _ -> nameBase name) con ++ "." ++
+          prettyField fld
+      prettyType typ = foldTypeP nameBase
+                                 (\ t1 t2 -> "((" ++ prettyType t1 ++ ") (" ++ prettyType t2 ++ "))")
+                                 ("(" ++ show typ ++ ")")
+                                 typ
+
+type StackT m = ReaderT [StackElement] m
+
+execStackT :: Monad m => StackT m a -> m a
+execStackT action = runReaderT action []
 
 -- | Combine a decFn and a primFn to make a nameFn in the Quasi monad.
 -- This is used to build the first argument to the foldType function
@@ -311,3 +297,13 @@ foldType nfn afn ofn (ForallT _ _ typ) = foldType nfn afn ofn typ
 foldType nfn _ _ (ConT name) = nfn name
 foldType _ afn _ (AppT t1 t2) = afn t1 t2
 foldType _ _ ofn _ = ofn
+-}
+
+{-
+adjacentTypes :: DsMonad m => Type -> m (Type, [Type])
+adjacentTypes (ForallT _ _ typ) = adjacentTypes typ
+adjacentTypes (AppT t1 t2) = [t1, t2]
+adjacentTypes t@(ConT _) = [t]
+adjacentTypes t@(VarT _) = [t]
+adjacentTypes _ = []
+-}
