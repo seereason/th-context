@@ -9,8 +9,6 @@ module Language.Haskell.TH.Fold
     , fType
     , prettyField
       -- * Folds
-    , foldType
-    , foldTypeP
     , foldName
     , foldDec
     , foldDecP
@@ -56,6 +54,7 @@ prettyField fld = maybe (show (fPos fld)) nameBase (fName fld)
 fType :: FieldType -> Type
 fType = either (\ (_, x) -> x) (\ (_, _, x) -> x) . fNameAndType
 
+#if 0
 -- | Dispatch on the constructors of type Type.  This ignores the
 -- "ForallT" constructor, it just uses the embeded Type field.
 foldType :: Monad m => (Name -> m r) -> (Type -> Type -> m r) -> m r -> Type -> m r
@@ -64,20 +63,18 @@ foldType nfn _ _ (ConT name) = nfn name
 foldType _ afn _ (AppT t1 t2) = afn t1 t2
 foldType _ _ ofn _ = ofn
 
+-- | Pure version of foldType.
+foldTypeP :: (Name -> r) -> (Type -> Type -> r) -> r -> Type -> r
+foldTypeP nfn afn ofn typ = runIdentity $ foldType (\ n -> Identity $ nfn n) (\ t1 t2 -> Identity $ afn t1 t2) (Identity ofn) typ
+#endif
+
 typeArity :: Quasi m => Type -> m Int
-typeArity typ =
-    foldType
-      (foldName
-         decArity
-         (\_ _ _ -> return 0)
-         infoArity)
-      (\t _  -> typeArity t >>= \ n -> return $ n - 1)
-      (return $ case typ of
-                  ListT -> 1
-                  TupleT n -> n
-                  VarT _ -> 1
-                  _ -> error $ "typeArity - unexpected type: " ++ show typ)
-      typ
+typeArity (ForallT _ _ typ) = typeArity typ
+typeArity ListT = return 1
+typeArity (VarT _) = return 1
+typeArity (TupleT n) = return n
+typeArity (AppT t _) = typeArity t >>= \ n -> return $ n - 1
+typeArity (ConT name) = foldName decArity (\_ _ _ -> return 0) infoArity name
     where
       decArity (DataD _ _ vs _ _) = return $ length vs
       decArity (NewtypeD _ _ vs _ _) = return $ length vs
@@ -86,10 +83,7 @@ typeArity typ =
       decArity dec = error $ "decArity - unexpected: " ++ show dec
       infoArity (FamilyI dec _) = decArity dec
       infoArity info = error $ "typeArity - unexpected: " ++ pprint' info
-
--- | Pure version of foldType.
-foldTypeP :: (Name -> r) -> (Type -> Type -> r) -> r -> Type -> r
-foldTypeP nfn afn ofn typ = runIdentity $ foldType (\ n -> Identity $ nfn n) (\ t1 t2 -> Identity $ afn t1 t2) (Identity ofn) typ
+typeArity typ = error $ "typeArity - unexpected type: " ++ show typ
 
 -- | Combine a decFn and a primFn to make a nameFn in the Quasi monad.
 -- This is used to build the first argument to the foldType function
@@ -207,10 +201,9 @@ instance HasPrimitiveType Name where
     hasPrimitiveType = foldName (\ _ -> return False) (\ _ _ _ -> return True) (\ _ -> return False)
 
 instance HasPrimitiveType Type where
-    hasPrimitiveType = foldType hasPrimitiveType afn ofn
-        where
-          afn t1 t2 = (||) <$> hasPrimitiveType t1 <*> hasPrimitiveType t2
-          ofn = return False
+    hasPrimitiveType (ConT name) = hasPrimitiveType name
+    hasPrimitiveType (AppT t1 t2) = (||) <$> hasPrimitiveType t1 <*> hasPrimitiveType t2
+    hasPrimitiveType _ = return False
 
 instance HasPrimitiveType Dec where
     hasPrimitiveType = foldDec hasPrimitiveType (\ cons -> or <$> mapM hasPrimitiveType cons)
