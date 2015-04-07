@@ -10,8 +10,6 @@ module Language.Haskell.TH.Fold
     , prettyField
       -- * Folds
     , foldName
-    , foldDec
-    , foldDecP
     , foldCon
     , foldShape
     -- * Constructor deconstructors
@@ -24,7 +22,6 @@ module Language.Haskell.TH.Fold
     ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad.Identity (Identity(Identity), runIdentity)
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 import Language.Haskell.Exts.Syntax ()
@@ -102,6 +99,7 @@ foldName decFn primFn otherFn name = do
     (PrimTyConI a b c) -> primFn a b c
     _ -> otherFn info
 
+#if 0
 -- | Dispatch on the different constructors of the Dec type.
 foldDec :: Monad m =>
            (Type -> m r)
@@ -117,6 +115,7 @@ foldDec typeFn shapeFn dec =
 -- | Dispatch on whether a type is a type synonym or a "real" type, newtype or data.
 foldDecP :: (Type -> r) -> ([Con] -> r) -> Dec -> r
 foldDecP typeFn shapeFn dec = runIdentity $ foldDec (\ t -> Identity $ typeFn t) (\ cs -> Identity $ shapeFn cs) dec
+#endif
 
 -- | Deconstruct a constructor
 foldCon :: (Name -> [FieldType] -> r) -> Con -> r
@@ -206,7 +205,10 @@ instance HasPrimitiveType Type where
     hasPrimitiveType _ = return False
 
 instance HasPrimitiveType Dec where
-    hasPrimitiveType = foldDec hasPrimitiveType (\ cons -> or <$> mapM hasPrimitiveType cons)
+    hasPrimitiveType (TySynD _ _ typ) = hasPrimitiveType typ
+    hasPrimitiveType (NewtypeD _ _ _ con _) = hasPrimitiveType con
+    hasPrimitiveType (DataD _ _ _ cons _) = or <$> mapM hasPrimitiveType cons
+    hasPrimitiveType dec = error $ "hasPrimiveType: " ++ show dec
 
 instance HasPrimitiveType Con where
     hasPrimitiveType = foldCon (\ _name flds -> or <$> mapM (hasPrimitiveType . fType) flds)
