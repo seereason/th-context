@@ -10,7 +10,7 @@ import Data.Set as Set (Set, fromList, difference)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (reifyInstancesWithContext, testContext, missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
-import Language.Haskell.TH.Expand (expandType)
+import Language.Haskell.TH.Expand (E, expandType, runExpanded)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
@@ -24,10 +24,11 @@ tests = do
      typ <- runQ [t|Int|]
      typ `shouldBe` ConT ''Int
 
-  -- String becomes [Char], Maybe String becomes Maybe [Char]
+  -- String becomes [Char], Maybe String becomes Maybe [Char], Maybe (Maybe String) becomes Maybe (Maybe [Char])
   it "expands types as expected" $ do
-     (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |] ])
-     let expanded = $(withLocalDeclarations [] (runQ (sequence [ [t|String|], [t|Maybe String|] ]) >>= mapM expandType {- >>= return . map runExpanded -}) >>= runQ . lift)
+     (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |], [t|Maybe (Maybe [Char])|] ])
+     let expanded = $(withLocalDeclarations [] (do (types :: [E Type]) <- runQ (sequence [ [t|String|], [t|Maybe String|], [t|Maybe (Maybe String)|] ]) >>= mapM expandType
+                                                   runQ . lift . map runExpanded $ types))
      expanded `shouldBe` expected
 
   -- Test the behavior of th-reify-many

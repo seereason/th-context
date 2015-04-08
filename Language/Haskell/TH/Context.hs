@@ -30,27 +30,23 @@ import Data.Maybe (catMaybes)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
-import Language.Haskell.TH.Expand (Expanded(runExpanded), unsafeExpanded, expandTypes)
+import Language.Haskell.TH.Expand (Expanded, expandPred, expandClassP, runExpanded, expanded, E)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
-type InstMap = Map (Expanded Pred) [InstanceDec]
+type InstMap pred = Map pred [InstanceDec]
 
-evalInstMap :: Monad m => StateT InstMap m r -> m r
-evalInstMap action = evalStateT action (mempty :: InstMap)
+evalInstMap :: Monad m => StateT (InstMap (E Pred)) m r -> m r
+evalInstMap action = evalStateT action (mempty :: (InstMap (E Pred)))
 
 -- | Like 'qReifyInstances', looks up all the instances that match the
 -- given class name and argument types.  However, unlike
 -- 'qReifyInstances', only the ones that satisfy all the instance
 -- context predicates are returned.
-reifyInstancesWithContext :: (DsMonad m, MonadState InstMap m) =>
+reifyInstancesWithContext :: (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred) m) =>
                              Name -> [Type] -> m [InstanceDec]
 reifyInstancesWithContext className typeParameters = do
-#if MIN_VERSION_template_haskell(2,10,0)
-       p <- expandTypes (foldl AppT (ConT className) typeParameters)
-#else
-       p <- expandTypes (ClassP className typeParameters)
-#endif
+       p <- expandClassP className typeParameters
        mp <- get
        case Map.lookup p mp of
          Just x -> return x
@@ -70,12 +66,12 @@ reifyInstancesWithContext className typeParameters = do
 -- context we have computed so far.  We have already added a ClassP predicate
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
-testInstance :: (DsMonad m, MonadState InstMap m) => Name -> [Type] -> InstanceDec -> m Bool
+testInstance :: (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred) m) => Name -> [Type] -> InstanceDec -> m Bool
 testInstance className typeParameters (InstanceD instanceContext instanceType _) = do
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
   -- instance context field.
-  mapM expandTypes (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext
+  mapM expandPred (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext
     where
       instancePredicates :: [Type] -> Type -> [Pred]
 #if MIN_VERSION_template_haskell(2,10,0)
@@ -95,16 +91,16 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- parameters with the instance type.  Are they consistent?  Find out
 -- using type synonym expansion, variable substitution, elimination of
 -- vacuous predicates, and unification.
-testContext :: (DsMonad m, MonadState InstMap m) => [Expanded Pred] -> m Bool
+testContext :: (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred) m) => [pred] -> m Bool
 testContext context =
     and <$> (mapM (consistent . runExpanded) =<< simplifyContext context)
 
 -- | Perform type expansion on the predicates, then simplify using
 -- variable substitution and eliminate vacuous equivalences.
-simplifyContext :: (DsMonad m, MonadState InstMap m) => [Expanded Pred] -> m [Expanded Pred]
+simplifyContext :: (DsMonad m, Expanded Pred pred, Eq pred, Ord pred, MonadState (InstMap pred) m) => [pred] -> m [pred]
 simplifyContext context =
     do let context' = concat $ map (unify . runExpanded) context
-       let context'' = map unsafeExpanded $ foldl simplifyPredicate context' context'
+       let context'' = map expanded $ foldl simplifyPredicate context' context'
        if (context'' == context) then return context'' else simplifyContext context''
 
 -- | Try to simplify the context by eliminating of one of the predicates.
@@ -124,7 +120,7 @@ simplifyPredicate context _ = context
 -- | Test the context (predicates) against both the instances in the Q
 -- monad and the additional instances that have accumulated in the
 -- State monad.
-testContextWithState :: forall m. (DsMonad m, MonadState InstMap m) => [Expanded Pred] -> m Bool
+testContextWithState :: forall m pred. (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred) m) => [pred] -> m Bool
 testContextWithState context = do
   -- Is the instance already in the Q monad?
   flag <- testContext context
@@ -135,7 +131,7 @@ testContextWithState context = do
     -- testContext?)
     False -> and <$> mapM testPredicate context
     where
-      testPredicate :: Expanded Pred -> m Bool
+      testPredicate :: pred -> m Bool
       testPredicate predicate = maybe False (not . null) <$> (Map.lookup predicate <$> get)
 
 -- | Unify the two arguments of an EqualP predicate, return a list of
@@ -157,7 +153,7 @@ unify x = [x]
 -- | Decide whether a predicate is consistent with the accumulated
 -- context.  Use recursive calls to qReifyInstancesWithContext when
 -- we encounter a class name applied to a list of type parameters.
-consistent :: (DsMonad m, MonadState InstMap m) => Pred -> m Bool
+consistent :: (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred) m) => Pred -> m Bool
 #if MIN_VERSION_template_haskell(2,10,0)
 consistent typ
     | isJust (unfoldInstance typ) =

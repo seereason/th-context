@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 module TypeGraph where
@@ -8,7 +9,7 @@ import Data.Set as Set (Set, fromList, toList, union)
 import GHC.Prim
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
-import Language.Haskell.TH.Expand (expandTypes, runExpanded)
+import Language.Haskell.TH.Expand (expandType, runExpanded, E)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.TypeGraph (subtypes, typeGraphEdges, VertexStatus(Vertex), typeArity)
@@ -21,41 +22,41 @@ tests :: SpecM () ()
 tests = do
   it "can find the subtypes of Type" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
-                                runQ [t|Type|] >>=
-                                expandTypes >>=
-                                subtypes . (: []) >>=
-                                runQ . lift . map runExpanded . Set.toList)) subtypesOfType
+                                  runQ [t|Type|] >>=
+                                  expandType >>= \ (typ :: E Type) ->
+                                  subtypes [typ] >>=
+                                  runQ . lift . map runExpanded . Set.toList)) subtypesOfType
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Type" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Type|] >>=
-                                expandTypes >>=
-                                typeGraphEdges (const $ return Vertex) . (: []) >>=
+                                expandType >>= \ (typ :: E Type) ->
+                                typeGraphEdges (const $ return Vertex) [typ] >>=
                                 runQ . lift . map toStrings . Map.toList)) typeEdges
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Dec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>=
-                                expandTypes >>=
-                                typeGraphEdges (const $ return Vertex) . (: []) >>=
+                                expandType >>= \ (typ :: E Type) ->
+                                typeGraphEdges (const $ return Vertex) [typ] >>=
                                 runQ . lift . map toStrings . Map.toList)) decEdges
         `shouldBe` noDifferences
 
   it "can find the subtypes of Dec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>=
-                                expandTypes >>=
-                                subtypes . (: []) >>=
+                                expandType >>= \ (typ :: E Type) ->
+                                subtypes [typ] >>=
                                 runQ . lift . map (unwords . words . pprint) . Set.toList)) subtypesOfDec
         `shouldBe` noDifferences
 
   it "can find the arity 0 subtypes of Dec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>=
-                                expandTypes >>=
-                                subtypes . (: []) >>=
+                                expandType >>= \ (typ :: E Type) ->
+                                subtypes [typ] >>=
                                 filterM (\ t -> typeArity (runExpanded t) >>= \ a -> return (a == 0)) . Set.toList >>=
                                 runQ . lift . map (unwords . words . pprint))) arity0SubtypesOfDec
         `shouldBe` noDifferences

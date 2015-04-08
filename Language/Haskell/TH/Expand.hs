@@ -1,37 +1,64 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Haskell.TH.Expand
-    ( Expanded(Expanded, runExpanded)
-    , expandTypes
+    ( Expanded(expanded, runExpanded)
     , expandType
-    , unsafeExpanded
+    , expandPred
+    , expandClassP
+    , E
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
 #endif
-import Data.Generics (Data, everywhereM, mkM)
 import Language.Haskell.Exts.Syntax ()
-import Language.Haskell.TH (Ppr(ppr), Type)
+import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
 import Language.Haskell.TH.Instances ()
 
--- | Mark a value that was returned by ExpandType.  The constructor is
--- not exported, so we know when we see it that it was produced in
--- this module.
-newtype Expanded a = Expanded {runExpanded :: a} deriving (Eq, Ord, Show)
+-- | This class lets us use the same expand* functions to work with
+-- specially marked expanded types or with the original types.
+class Expanded a b | b -> a where
+    expanded :: a -> b
+    runExpanded :: b -> a
 
-instance Ppr a => Ppr (Expanded a) where
-    ppr = ppr . runExpanded
+expandType :: (DsMonad m, Expanded Type e)  => Type -> m e
+expandType typ = expanded <$> DS.typeToTH <$> (DS.dsType typ >>= DS.expand)
 
--- | The ubiquitous cheat.  Merging TypeGraph.hs into this module eliminates this.
-unsafeExpanded :: a -> Expanded a
-unsafeExpanded = Expanded
+expandPred :: (DsMonad m, Expanded Pred e)  => Pred -> m e
+#if MIN_VERSION_template_haskell(2,10,0)
+expandPred pred = expanded <$> expandType pred
+#else
+expandPred (ClassP className typeParameters) = expanded <$> ClassP className <$> mapM expandType typeParameters
+expandPred (EqualP type1 type2) = expanded <$> (EqualP <$> expandType type1 <*> expandType type2)
+#endif
 
--- | Expand Type everywhere in x and wrap it in the Expanded constructor.  Note
--- that the everywhereM is unnecessary when @a ~ Type@ because expandType does
--- the everywhere itself.  But it is necessary for other argument types.
-expandTypes :: (DsMonad m, Data a) => a -> m (Expanded a)
-expandTypes x = Expanded <$> everywhereM (mkM expandType) x
+expandClassP :: (DsMonad m, Expanded Pred e)  => Name -> [Type] -> m e
+expandClassP className typeParameters =
+    expanded <$>
+#if MIN_VERSION_template_haskell(2,10,0)
+      expandType $ foldl AppT (ConT className) typeParameters
+#else
+      ClassP className <$> mapM expandType typeParameters
+#endif
 
-expandType :: DsMonad m => Type -> m Type
-expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expand)
+-- | A wrapper denoting an expanded value with provided Expanded instances.
+newtype E a = E a deriving (Eq, Ord, Show)
+
+instance Expanded Type Type where
+    expanded = id
+    runExpanded = id
+
+instance Expanded Type (E Type) where
+    expanded = E
+    runExpanded (E x) = x
+
+instance Expanded Pred (E Pred) where
+    expanded = E
+    runExpanded (E x) = x
+
+instance Ppr a => Ppr (E a) where
+    ppr (E x) = ppr x
