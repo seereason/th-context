@@ -8,9 +8,10 @@ import Data.Set as Set (Set, fromList, toList, union)
 import GHC.Prim
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
+import Language.Haskell.TH.Expand (expandTypes, runExpanded)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
-import Language.Haskell.TH.TypeGraph (expandTypes, runExpanded, subtypes, typeGraphEdges, VertexStatus(Vertex), typeArity)
+import Language.Haskell.TH.TypeGraph (subtypes, typeGraphEdges, VertexStatus(Vertex), typeArity)
 import Test.Hspec hiding (runIO)
 import Test.Hspec.Core.Spec (SpecM)
 

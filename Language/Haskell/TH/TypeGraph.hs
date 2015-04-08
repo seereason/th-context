@@ -9,11 +9,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 module Language.Haskell.TH.TypeGraph
-    ( Expanded(runExpanded)
-    , expandTypes
-    , expandType
-    , unsafeExpanded
-    , typeArity
+    ( typeArity
       -- * Subtype graph
     , typeGraphEdges
     , VertexStatus(..)
@@ -28,37 +24,16 @@ import Control.Applicative
 #endif
 import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Control.Monad.Trans (lift)
-import Data.Generics (Data, everywhereM, mkM)
 import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.Map as Map (Map, insert, keys, lookup, toList, update)
 import Data.Monoid (mempty)
 import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
-import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
+import Language.Haskell.TH.Desugar as DS (DsMonad)
+import Language.Haskell.TH.Expand (Expanded(Expanded, runExpanded))
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax (Quasi(..))
-
--- | Mark a value that was returned by ExpandType.  The constructor is
--- not exported, so we know when we see it that it was produced in
--- this module.
-newtype Expanded a = Expanded {runExpanded :: a} deriving (Eq, Ord, Show)
-
-instance Ppr a => Ppr (Expanded a) where
-    ppr = ppr . runExpanded
-
--- | The ubiquitous cheat.  Merging TypeGraph.hs into this module eliminates this.
-unsafeExpanded :: a -> Expanded a
-unsafeExpanded = Expanded
-
--- | Expand Type everywhere in x and wrap it in the Expanded constructor.  Note
--- that the everywhereM is unnecessary when @a ~ Type@ because expandType does
--- the everywhere itself.  But it is necessary for other argument types.
-expandTypes :: (DsMonad m, Data a) => a -> m (Expanded a)
-expandTypes x = Expanded <$> everywhereM (mkM expandType) x
-
-expandType :: DsMonad m => Type -> m Type
-expandType t = DS.typeToTH <$> (DS.dsType t >>= DS.expand)
 
 type TypeGraph = Map (Expanded Type) (Set (Expanded Type))
 
@@ -171,7 +146,7 @@ typeArity (ConT name) =
       decArity (DataD _ _ vs _ _) = return $ length vs
       decArity (NewtypeD _ _ vs _ _) = return $ length vs
       decArity (TySynD _ vs t) = typeArity t >>= \ n -> return $ n + length vs
-      decArity (FamilyD _ _ vs mk) = return $ {- not sure what to do with the kind mk here -} length vs
+      decArity (FamilyD _ _ vs _mk) = return $ {- not sure what to do with the kind mk here -} length vs
       decArity dec = error $ "decArity - unexpected: " ++ pprint' dec
 typeArity typ = error $ "typeArity - unexpected type: " ++ pprint' typ
 

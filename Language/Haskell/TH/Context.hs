@@ -30,9 +30,9 @@ import Data.Maybe (catMaybes)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
+import Language.Haskell.TH.Expand (Expanded(runExpanded), unsafeExpanded, expandTypes)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
-import Language.Haskell.TH.TypeGraph (Expanded(runExpanded), unsafeExpanded, expandTypes)
 
 type InstMap = Map (Expanded Pred) [InstanceDec]
 
