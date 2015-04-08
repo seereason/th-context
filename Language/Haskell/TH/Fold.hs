@@ -2,21 +2,21 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Some hopefully straightforward utility types, functions, and instances for template haskell.
 module Language.Haskell.TH.Fold
-    ( decName
-      -- * Constructor fields
-    , FieldType(FieldType, fPos, fNameAndType)
+    ( -- * Declaration shape
+      FieldType(FieldType, fPos, fNameAndType)
     , fName
     , fType
     , prettyField
-      -- * Folds
-    , foldName
+    , constructorFields
     , foldShape
+      -- * Name reification
+    , foldName
     -- * Constructor deconstructors
     , constructorName
-    , constructorFields
     -- * Queries
     , typeArity
     , HasPrimitiveType(hasPrimitiveType)
+    -- * Pretty print without extra whitespace
     , pprint'
     ) where
 
@@ -27,12 +27,6 @@ import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar ({- instances -})
 import Language.Haskell.TH.Syntax hiding (lift)
-
-decName :: Dec -> Name
-decName (NewtypeD _ name _ _ _) = name
-decName (DataD _ name _ _ _) = name
-decName (TySynD name _ _) = name
-decName x = error $ "decName - unimplemented: " ++ show x
 
 data FieldType
     = FieldType
@@ -50,19 +44,32 @@ prettyField fld = maybe (show (fPos fld)) nameBase (fName fld)
 fType :: FieldType -> Type
 fType = either (\ (_, x) -> x) (\ (_, _, x) -> x) . fNameAndType
 
-#if 0
--- | Dispatch on the constructors of type Type.  This ignores the
--- "ForallT" constructor, it just uses the embeded Type field.
-foldType :: Monad m => (Name -> m r) -> (Type -> Type -> m r) -> m r -> Type -> m r
-foldType nfn afn ofn (ForallT _ _ typ) = foldType nfn afn ofn typ
-foldType nfn _ _ (ConT name) = nfn name
-foldType _ afn _ (AppT t1 t2) = afn t1 t2
-foldType _ _ ofn _ = ofn
+-- | Given the list of constructors from a Dec, dispatch on the
+-- different levels of complexity of the type they represent - a
+-- wrapper is a single arity one constructor, an enum is
+-- several arity zero constructors, and so on.
+foldShape :: Monad m =>
+             ([(Con, [FieldType])] -> m r) -- dataFn - several constructors not all of which are arity zero
+          -> (Con -> [FieldType] -> m r)   -- recordFn - one constructor which has arity greater than one
+          -> ([Con] -> m r)                -- enumFn - all constructors are of arity zero
+          -> (Con -> FieldType -> m r)     -- wrapperFn - one constructor of arity one
+          -> [Con] -> m r
+foldShape dataFn recordFn enumFn wrapperFn cons =
+    case zip cons (map constructorFields cons) :: [(Con, [FieldType])] of
+      [(con, [fld])] ->
+          wrapperFn con fld
+      [(con, flds)] ->
+          recordFn con flds
+      pairs | all (== 0) (map (length . snd) pairs) ->
+          enumFn (map fst pairs)
+      pairs ->
+          dataFn pairs
 
--- | Pure version of foldType.
-foldTypeP :: (Name -> r) -> (Type -> Type -> r) -> r -> Type -> r
-foldTypeP nfn afn ofn typ = runIdentity $ foldType (\ n -> Identity $ nfn n) (\ t1 t2 -> Identity $ afn t1 t2) (Identity ofn) typ
-#endif
+constructorFields :: Con -> [FieldType]
+constructorFields (ForallC _ _ con) = constructorFields con
+constructorFields (NormalC _ ts) = map (uncurry FieldType) (zip [1..] (map Left ts))
+constructorFields (RecC _ ts) = map (uncurry FieldType) (zip [1..] (map Right ts))
+constructorFields (InfixC t1 _ t2) = map (uncurry FieldType) [(1, Left t1), (2, Left t2)]
 
 typeArity :: Quasi m => Type -> m Int
 typeArity (ForallT _ _ typ) = typeArity typ
@@ -98,63 +105,11 @@ foldName decFn primFn otherFn name = do
     (PrimTyConI a b c) -> primFn a b c
     _ -> otherFn info
 
-#if 0
--- | Dispatch on the different constructors of the Dec type.
-foldDec :: Monad m =>
-           (Type -> m r)
-        -> ([Con] -> m r)
-        -> Dec -> m r
-foldDec typeFn shapeFn dec =
-    case dec of
-      TySynD _name _ typ -> typeFn typ
-      NewtypeD _ _ _ con _ -> shapeFn [con]
-      DataD _ _ _ cons _ -> shapeFn cons
-      _ -> error $ "foldDec - unexpected: " ++ show dec
-
--- | Dispatch on whether a type is a type synonym or a "real" type, newtype or data.
-foldDecP :: (Type -> r) -> ([Con] -> r) -> Dec -> r
-foldDecP typeFn shapeFn dec = runIdentity $ foldDec (\ t -> Identity $ typeFn t) (\ cs -> Identity $ shapeFn cs) dec
-
--- | Deconstruct a constructor
-foldCon :: (Name -> [FieldType] -> r) -> Con -> r
-foldCon fldFn (NormalC name ts) = fldFn name $ map (uncurry FieldType) (zip [1..] (map Left ts))
-foldCon fldFn (RecC name ts) = fldFn name (map (uncurry FieldType) (zip [1..] (map Right ts)))
-foldCon fldFn (InfixC t1 name t2) = fldFn name (map (uncurry FieldType) [(1, Left t1), (2, Left t2)])
-foldCon fldFn (ForallC _ _ con) = foldCon fldFn con
-#endif
-
 -- indent :: String -> String -> String
 -- indent i s = intercalate "\n" (map (i ++) (lines s))
 
--- | Given the list of constructors from a Dec, dispatch on the
--- different levels of complexity of the type they represent - a
--- wrapper is a single arity one constructor, an enum is
--- several arity zero constructors, and so on.
-foldShape :: Monad m =>
-             ([(Con, [FieldType])] -> m r) -- dataFn - several constructors not all of which are arity zero
-          -> (Con -> [FieldType] -> m r)   -- recordFn - one constructor which has arity greater than one
-          -> ([Con] -> m r)                -- enumFn - all constructors are of arity zero
-          -> (Con -> FieldType -> m r)     -- wrapperFn - one constructor of arity one
-          -> [Con] -> m r
-foldShape dataFn recordFn enumFn wrapperFn cons =
-    case zip cons (map constructorFields cons) :: [(Con, [FieldType])] of
-      [(con, [fld])] ->
-          wrapperFn con fld
-      [(con, flds)] ->
-          recordFn con flds
-      pairs | all (== 0) (map (length . snd) pairs) ->
-          enumFn (map fst pairs)
-      pairs ->
-          dataFn pairs
-
 pprint' :: Ppr a => a -> [Char]
 pprint' typ = unwords $ words $ pprint typ
-
-constructorFields :: Con -> [FieldType]
-constructorFields (ForallC _ _ con) = constructorFields con
-constructorFields (NormalC _ ts) = map (uncurry FieldType) (zip [1..] (map Left ts))
-constructorFields (RecC _ ts) = map (uncurry FieldType) (zip [1..] (map Right ts))
-constructorFields (InfixC t1 _ t2) = map (uncurry FieldType) [(1, Left t1), (2, Left t2)]
 
 constructorName :: Con -> Name
 constructorName (ForallC _ _ con) = constructorName con
