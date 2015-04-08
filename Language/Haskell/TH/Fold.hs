@@ -2,8 +2,9 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Some hopefully straightforward utility types, functions, and instances for template haskell.
 module Language.Haskell.TH.Fold
-    ( -- * Declaration shape
-      FieldType(FieldType, fPos, fNameAndType)
+    ( decName
+      -- * Declaration shape
+    , FieldType(FieldType, fPos, fNameAndType)
     , fName
     , fType
     , prettyField
@@ -27,6 +28,12 @@ import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar ({- instances -})
 import Language.Haskell.TH.Syntax hiding (lift)
+
+decName :: Dec -> Name
+decName (NewtypeD _ name _ _ _) = name
+decName (DataD _ name _ _ _) = name
+decName (TySynD name _ _) = name
+decName x = error $ "decName - unimplemented: " ++ show x
 
 data FieldType
     = FieldType
