@@ -16,8 +16,9 @@ module Language.Haskell.TH.TypeGraph
     , typeArity
       -- * Subtype graph
     , typeGraphEdges
-    , typeGraphEdgesPlus
+    , VertexStatus(..)
     , subtypes
+    , subtypeGraph
     ) where
 
 import Debug.Trace
@@ -25,22 +26,18 @@ import Debug.Trace
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
 #endif
-import Control.Monad.Identity (Identity(Identity), runIdentity)
-import Control.Monad.RWS (RWST)
-import Control.Monad.Reader (ask, local, ReaderT, runReaderT)
-import Control.Monad.State (evalStateT, execStateT, modify, MonadState(get), StateT)
+import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Control.Monad.Trans (lift)
-import Control.Monad.Writer (MonadWriter(tell), WriterT(runWriterT))
-import Data.Generics (Data, Typeable, everywhereM, mkM)
+import Data.Generics (Data, everywhereM, mkM)
 import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.Map as Map (Map, insert, keys, lookup, toList, update)
-import Data.Monoid (Monoid, mempty)
+import Data.Monoid (mempty)
 import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
 import Language.Haskell.TH.Instances ()
-import Language.Haskell.TH.Syntax (Quasi(..), StrictType, VarStrictType)
+import Language.Haskell.TH.Syntax (Quasi(..))
 
 -- | Mark a value that was returned by ExpandType.  The constructor is
 -- not exported, so we know when we see it that it was produced in
@@ -69,10 +66,10 @@ type TypeGraph = Map (Expanded Type) (Set (Expanded Type))
 -- This is just the nodes of the type graph.
 subtypes :: DsMonad m => [Expanded Type] -> m (Set (Expanded Type))
 subtypes types = do
-  (Set.fromList . Map.keys) <$> typeGraphEdges types
+  (Set.fromList . Map.keys) <$> typeGraphEdges (const $ return Vertex) types
 
-typeGraphEdges :: forall m. DsMonad m => [Expanded Type] -> m TypeGraph
-typeGraphEdges = typeGraphEdgesPlus (\ _ -> return Vertex)
+-- typeGraphEdges :: forall m. DsMonad m => [Expanded Type] -> m TypeGraph
+-- typeGraphEdges = typeGraphEdgesPlus (\ _ -> return Vertex)
 
 data VertexStatus
     = Vertex      -- ^ normal case
@@ -82,7 +79,7 @@ data VertexStatus
     | Extra (Expanded Type)   -- ^ send edge to an additional type
     deriving Show
 
-typeGraphEdgesPlus
+typeGraphEdges
     :: forall m. DsMonad m =>
        (Expanded Type -> m VertexStatus)
            -- ^ This function is applied to every expanded type before
@@ -97,7 +94,7 @@ typeGraphEdgesPlus
     -> [Expanded Type]
     -> m TypeGraph
 
-typeGraphEdgesPlus augment types = do
+typeGraphEdges augment types = do
   execStateT (mapM_ doNode types) mempty
     where
       doNode :: Expanded Type -> StateT TypeGraph m ()
@@ -153,7 +150,7 @@ typeGraphEdgesPlus augment types = do
 subtypeGraph :: (DsMonad m, node ~ Expanded Type, key ~ Expanded Type) =>
                 (Expanded Type -> m VertexStatus) -> [Expanded Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
 subtypeGraph augment types = do
-  typeGraphEdgesPlus augment types >>= return . graphFromEdges . triples
+  typeGraphEdges augment types >>= return . graphFromEdges . triples
     where
       triples mp = map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
 

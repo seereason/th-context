@@ -10,7 +10,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
-import Language.Haskell.TH.TypeGraph (expandTypes, runExpanded, subtypes, typeGraphEdges, typeArity)
+import Language.Haskell.TH.TypeGraph (expandTypes, runExpanded, subtypes, typeGraphEdges, VertexStatus(Vertex), typeArity)
 import Test.Hspec hiding (runIO)
 import Test.Hspec.Core.Spec (SpecM)
 
@@ -30,7 +30,7 @@ tests = do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Type|] >>=
                                 expandTypes >>=
-                                typeGraphEdges . (: []) >>=
+                                typeGraphEdges (const $ return Vertex) . (: []) >>=
                                 runQ . lift . map toStrings . Map.toList)) typeEdges
         `shouldBe` noDifferences
 
@@ -38,7 +38,7 @@ tests = do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>=
                                 expandTypes >>=
-                                typeGraphEdges . (: []) >>=
+                                typeGraphEdges (const $ return Vertex) . (: []) >>=
                                 runQ . lift . map toStrings . Map.toList)) decEdges
         `shouldBe` noDifferences
 
