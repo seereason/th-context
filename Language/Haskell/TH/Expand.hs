@@ -52,6 +52,10 @@ instance Expanded Type Type where
     expanded = id
     runExpanded = id
 
+instance Expanded Pred Pred where
+    expanded = id
+    runExpanded = id
+
 instance Expanded Type (E Type) where
     expanded = E
     runExpanded (E x) = x

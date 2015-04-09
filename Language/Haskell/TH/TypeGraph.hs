@@ -13,11 +13,9 @@ module Language.Haskell.TH.TypeGraph
       -- * Subtype graph
     , typeGraphEdges
     , VertexStatus(..)
-    , subtypes
+    , typeGraphVertices
     , subtypeGraph
     ) where
-
-import Debug.Trace
 
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
@@ -35,21 +33,27 @@ import Language.Haskell.TH.Expand (Expanded, expanded, runExpanded)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax (Quasi(..))
 
-type TypeGraph typ = Map typ (Set typ)
+type TypeGraphEdges typ = Map typ (Set typ)
 
--- | Return the set of (expanded) types embedded in the given type.
--- This is just the nodes of the type graph.
-subtypes :: (Expanded Type typ, Ord typ, Show typ) => DsMonad m => [typ] -> m (Set typ)
-subtypes types = do
-  (Set.fromList . Map.keys) <$> typeGraphEdges (const $ return Vertex) types
-
+-- | When a VertexStatus value is associated with a Type it describes
+-- alterations in the type graph from the usual default.
 data VertexStatus typ
     = Vertex      -- ^ normal case
-    | NoVertex    -- ^ exclude from graph
-    | Sink        -- ^ out degree zero
-    | Divert typ  -- ^ send edge to an alternate type
-    | Extra typ   -- ^ send edge to an additional type
+    | NoVertex    -- ^ exclude this type from the graph
+    | Sink        -- ^ out degree zero - don't create any outgoing edges
+    | Divert typ  -- ^ replace all outgoing edges with an edge to an alternate type
+    | Extra typ   -- ^ add an extra outgoing edge to the given type
     deriving Show
+
+-- | Return the set of types embedded in the given type.  This is just
+-- the nodes of the type graph.  The type aliases are expanded by the
+-- th-desugar package to make them suitable for use as map keys.
+typeGraphVertices :: (DsMonad m, Expanded Type typ, Ord typ, Show typ) =>
+                     (typ -> m (VertexStatus typ))
+                  -> [typ]
+                  -> m (Set typ)
+typeGraphVertices augment types =
+    (Set.fromList . Map.keys) <$> typeGraphEdges augment types
 
 typeGraphEdges
     :: forall m typ. (DsMonad m, Expanded Type typ, Ord typ, Show typ) =>
@@ -64,19 +68,19 @@ typeGraphEdges
            -- lens returned by @View's@ method to convert between @a@
            -- and @b@ (i.e. to implement the edge in the type graph.)
     -> [typ]
-    -> m (TypeGraph typ)
+    -> m (TypeGraphEdges typ)
 
 typeGraphEdges augment types = do
   execStateT (mapM_ doNode types) mempty
     where
-      doNode :: typ -> StateT (TypeGraph typ) m ()
+      doNode :: typ -> StateT (TypeGraphEdges typ) m ()
       doNode typ = do
         mp <- get
         status <- lift (augment typ)
         case Map.lookup typ mp of
           Just _ -> return ()
           Nothing -> do
-            trace ("doNode " ++ (unwords . words . show . ppr . runExpanded $ typ) ++ ", status=" ++ show status) (return ())
+            -- trace ("doNode " ++ (unwords . words . show . ppr . runExpanded $ typ) ++ ", status=" ++ show status) (return ())
             case status of
               NoVertex -> return ()
               Sink -> addNode typ
@@ -84,14 +88,14 @@ typeGraphEdges augment types = do
               (Extra typ') -> addNode typ >> doEdges (runExpanded typ) >> addEdge typ typ' >> doNode typ'
               Vertex -> addNode typ >> doEdges (runExpanded typ)
 
-      addNode :: typ -> StateT (TypeGraph typ) m ()
+      addNode :: typ -> StateT (TypeGraphEdges typ) m ()
       -- addNode a = expandType a >>= \ a' -> modify $ Map.insertWith (flip const) a' Set.empty
       addNode a = modify $ Map.alter (maybe (Just Set.empty) Just) a
-      addEdge :: typ -> typ -> StateT (TypeGraph typ) m ()
+      addEdge :: typ -> typ -> StateT (TypeGraphEdges typ) m ()
       addEdge a b = modify $ Map.update (Just . Set.insert b) a
 
       -- We know that the Type argument is actually fully expanded here.
-      doEdges :: Type -> StateT (TypeGraph typ) m ()
+      doEdges :: Type -> StateT (TypeGraphEdges typ) m ()
       doEdges typ@(ForallT _ _ typ') = addEdge (expanded typ) (expanded typ') >> doNode (expanded typ')
       doEdges typ@(AppT container element) =
           addEdge (expanded typ) (expanded container) >>
@@ -105,13 +109,13 @@ typeGraphEdges augment types = do
           TyConI dec -> doDec dec
           _ -> return ()
           where
-            doDec :: Dec -> StateT (TypeGraph typ) m ()
+            doDec :: Dec -> StateT (TypeGraphEdges typ) m ()
             doDec dec@(NewtypeD _ tname _ con _) = doCon tname dec con
             doDec dec@(DataD _ tname _ cons _) = mapM_ (doCon tname dec) cons
             doDec (TySynD _tname _tvars typ') = addEdge (expanded typ) (expanded typ') >> doNode (expanded typ')
             doDec _ = return ()
 
-            doCon :: Name -> Dec -> Con -> StateT (TypeGraph typ) m ()
+            doCon :: Name -> Dec -> Con -> StateT (TypeGraphEdges typ) m ()
             doCon tname dec (ForallC _ _ con) = doCon tname dec con
             doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map (expanded . snd) fields))
             doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, expanded typ')) fields)
@@ -119,10 +123,11 @@ typeGraphEdges augment types = do
 
             doField _tname _dec _cname (_fld, ftype) = addEdge (expanded typ) ftype >> doNode ftype
 
-      doEdges typ = return (trace ("Unrecognized type: " ++ pprint' typ) ())
+      doEdges _typ = return ({-trace ("Unrecognized type: " ++ pprint' typ)-} ())
 
--- | Build a graph from the result of typeGraphEdgesPlus, its edges
--- represent the primitive lenses, and each path in the graph is a
+-- | Build a graph from the result of typeGraphEdges, each edge goes
+-- from a type to one of the types it contains.  Thus, each edge
+-- represents a primitive lens, and each path in the graph is a
 -- composition of lenses.
 subtypeGraph :: (DsMonad m, Expanded Type typ, Ord typ, Show typ, node ~ typ, key ~ typ) =>
                 (typ -> m (VertexStatus typ)) -> [typ] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
