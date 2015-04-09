@@ -22,6 +22,7 @@ import Control.Applicative
 #endif
 import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Control.Monad.Trans (lift)
+import Data.Default (Default(def))
 import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.Map as Map (Map, keys, lookup, toList, update, alter)
 import Data.Monoid (mempty)
@@ -44,6 +45,9 @@ data VertexStatus typ
     | Divert typ  -- ^ replace all outgoing edges with an edge to an alternate type
     | Extra typ   -- ^ add an extra outgoing edge to the given type
     deriving Show
+
+instance Default (VertexStatus typ) where
+    def = Vertex
 
 -- | Return the set of types embedded in the given type.  This is just
 -- the nodes of the type graph.  The type aliases are expanded by the
@@ -79,8 +83,7 @@ typeGraphEdges augment types = do
         status <- lift (augment typ)
         case Map.lookup typ mp of
           Just _ -> return ()
-          Nothing -> do
-            -- trace ("doNode " ++ (unwords . words . show . ppr . runExpanded $ typ) ++ ", status=" ++ show status) (return ())
+          Nothing ->
             case status of
               NoVertex -> return ()
               Sink -> addNode typ
