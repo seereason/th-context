@@ -30,7 +30,7 @@ import Data.Maybe (catMaybes)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
-import Language.Haskell.TH.Expand (Expanded, expandPred, expandClassP, runExpanded, expanded, E)
+import Language.Haskell.TH.Expand (Expanded, expandPred, expandClassP, runExpanded, markExpanded, E)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
@@ -100,7 +100,7 @@ testContext context =
 simplifyContext :: (DsMonad m, Expanded Pred pred, Eq pred, Ord pred, MonadState (InstMap pred) m) => [pred] -> m [pred]
 simplifyContext context =
     do let context' = concat $ map (unify . runExpanded) context
-       let context'' = map expanded $ foldl simplifyPredicate context' context'
+       let context'' = map markExpanded $ foldl simplifyPredicate context' context'
        if (context'' == context) then return context'' else simplifyContext context''
 
 -- | Try to simplify the context by eliminating of one of the predicates.

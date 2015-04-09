@@ -4,7 +4,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Haskell.TH.Expand
-    ( Expanded(expanded, runExpanded)
+    ( Expanded(markExpanded, runExpanded)
     , expandType
     , expandPred
     , expandClassP
@@ -22,23 +22,23 @@ import Language.Haskell.TH.Instances ()
 -- | This class lets us use the same expand* functions to work with
 -- specially marked expanded types or with the original types.
 class Expanded a b | b -> a where
-    expanded :: a -> b
+    markExpanded :: a -> b -- was expanded
     runExpanded :: b -> a
 
 expandType :: (DsMonad m, Expanded Type e)  => Type -> m e
-expandType typ = expanded <$> DS.typeToTH <$> (DS.dsType typ >>= DS.expand)
+expandType typ = markExpanded <$> DS.typeToTH <$> (DS.dsType typ >>= DS.expand)
 
 expandPred :: (DsMonad m, Expanded Pred e)  => Pred -> m e
 #if MIN_VERSION_template_haskell(2,10,0)
-expandPred pred = expanded <$> expandType pred
+expandPred pred = markExpanded <$> expandType pred
 #else
-expandPred (ClassP className typeParameters) = expanded <$> ClassP className <$> mapM expandType typeParameters
-expandPred (EqualP type1 type2) = expanded <$> (EqualP <$> expandType type1 <*> expandType type2)
+expandPred (ClassP className typeParameters) = markExpanded <$> ClassP className <$> mapM expandType typeParameters
+expandPred (EqualP type1 type2) = markExpanded <$> (EqualP <$> expandType type1 <*> expandType type2)
 #endif
 
 expandClassP :: (DsMonad m, Expanded Pred e)  => Name -> [Type] -> m e
 expandClassP className typeParameters =
-    expanded <$>
+    markExpanded <$>
 #if MIN_VERSION_template_haskell(2,10,0)
       expandType $ foldl AppT (ConT className) typeParameters
 #else
@@ -49,19 +49,19 @@ expandClassP className typeParameters =
 newtype E a = E a deriving (Eq, Ord, Show)
 
 instance Expanded Type Type where
-    expanded = id
+    markExpanded = id
     runExpanded = id
 
 instance Expanded Pred Pred where
-    expanded = id
+    markExpanded = id
     runExpanded = id
 
 instance Expanded Type (E Type) where
-    expanded = E
+    markExpanded = E
     runExpanded (E x) = x
 
 instance Expanded Pred (E Pred) where
-    expanded = E
+    markExpanded = E
     runExpanded (E x) = x
 
 instance Ppr a => Ppr (E a) where

@@ -30,7 +30,7 @@ import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Desugar as DS (DsMonad)
-import Language.Haskell.TH.Expand (Expanded, expanded, runExpanded)
+import Language.Haskell.TH.Expand (Expanded, markExpanded, runExpanded)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax (Quasi(..))
 
@@ -99,12 +99,12 @@ typeGraphEdges augment types = do
 
       -- We know that the Type argument is actually fully expanded here.
       doEdges :: Type -> StateT (TypeGraphEdges typ) m ()
-      doEdges typ@(ForallT _ _ typ') = addEdge (expanded typ) (expanded typ') >> doNode (expanded typ')
+      doEdges typ@(ForallT _ _ typ') = addEdge (markExpanded typ) (markExpanded typ') >> doNode (markExpanded typ')
       doEdges typ@(AppT container element) =
-          addEdge (expanded typ) (expanded container) >>
-          addEdge (expanded typ) (expanded element) >>
-          doNode (expanded container) >>
-          doNode (expanded element)
+          addEdge (markExpanded typ) (markExpanded container) >>
+          addEdge (markExpanded typ) (markExpanded element) >>
+          doNode (markExpanded container) >>
+          doNode (markExpanded element)
       -- Can this happen if typ is fully expanded?
       doEdges typ@(ConT name) = do
         info <- qReify name
@@ -115,16 +115,16 @@ typeGraphEdges augment types = do
             doDec :: Dec -> StateT (TypeGraphEdges typ) m ()
             doDec dec@(NewtypeD _ tname _ con _) = doCon tname dec con
             doDec dec@(DataD _ tname _ cons _) = mapM_ (doCon tname dec) cons
-            doDec (TySynD _tname _tvars typ') = addEdge (expanded typ) (expanded typ') >> doNode (expanded typ')
+            doDec (TySynD _tname _tvars typ') = addEdge (markExpanded typ) (markExpanded typ') >> doNode (markExpanded typ')
             doDec _ = return ()
 
             doCon :: Name -> Dec -> Con -> StateT (TypeGraphEdges typ) m ()
             doCon tname dec (ForallC _ _ con) = doCon tname dec con
-            doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map (expanded . snd) fields))
-            doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, expanded typ')) fields)
-            doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, expanded lhs), (Left 2, expanded rhs)]
+            doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map (markExpanded . snd) fields))
+            doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, markExpanded typ')) fields)
+            doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, markExpanded lhs), (Left 2, markExpanded rhs)]
 
-            doField _tname _dec _cname (_fld, ftype) = addEdge (expanded typ) ftype >> doNode ftype
+            doField _tname _dec _cname (_fld, ftype) = addEdge (markExpanded typ) ftype >> doNode ftype
 
       doEdges _typ = return ({-trace ("Unrecognized type: " ++ pprint' typ)-} ())
 
