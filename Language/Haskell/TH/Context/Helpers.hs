@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP, DeriveDataTypeable, RankNTypes, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Some hopefully straightforward utility types, functions, and instances for template haskell.
-module Language.Haskell.TH.Fold
+module Language.Haskell.TH.Context.Helpers
     ( -- * Declaration shape
       FieldType(FieldType, fPos, fNameAndType)
     , fName
@@ -18,6 +18,9 @@ module Language.Haskell.TH.Fold
     , pprint'
     ) where
 
+#if __GLASGOW_HASKELL__ < 709
+import Control.Applicative ((<$>), (<*>))
+#endif
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 import Language.Haskell.Exts.Syntax ()
@@ -97,15 +100,29 @@ constructorName (RecC name _) = name
 constructorName (InfixC _ name _) = name
 
 -- | Does the type or the declaration to which it refers contain a
--- primitive (aka unlifted) type?
+-- primitive (aka unlifted) type?  This will traverse down any type
+-- to the named types, and then check whether these are primitive.
 class IsUnlifted t where
     unlifted :: Quasi m => t -> m Bool
+
+instance IsUnlifted Dec where
+    unlifted (DataD _ _ _ cons _) = or <$> mapM unlifted cons
+    unlifted (NewtypeD _ _ _ con _) = unlifted con
+    unlifted (TySynD _ _ typ) = unlifted typ
+    unlifted _ = return False
+
+instance IsUnlifted Con where
+    unlifted (ForallC _ _ con) = unlifted con
+    unlifted (NormalC _ ts) = or <$> mapM (unlifted . snd) ts
+    unlifted (RecC _ ts) = or <$> mapM (\ (_, _, t) -> unlifted t) ts
+    unlifted (InfixC t1 _ t2) = or <$> mapM (unlifted . snd) [t1, t2]
 
 instance IsUnlifted Type where
     unlifted (ForallT _ _ typ) = unlifted typ
     unlifted (ConT name) = qReify name >>= unlifted
+    unlifted (AppT t1 t2) = (||) <$> unlifted t1 <*> unlifted t2
     unlifted _ = return False
 
 instance IsUnlifted Info where
     unlifted (PrimTyConI _ _ _) = return True
-    unlifted _ = return False
+    unlifted _ = return False -- traversal stops here

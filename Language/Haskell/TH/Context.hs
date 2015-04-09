@@ -12,12 +12,7 @@
 module Language.Haskell.TH.Context
     ( InstMap
     , evalInstMap
-    , reifyInstancesWithContext -- was instances
-    , testInstance
-    , testContext
-    , testContextWithState -- was testPred
-    , missingInstances
-    , simpleMissingInstanceTest
+    , reifyInstancesWithContext
     ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -26,11 +21,10 @@ import Control.Monad.State (MonadState, StateT, get, modify, evalStateT)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert)
-import Data.Maybe (catMaybes)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
+import Language.Haskell.TH.Context.Expand (Expanded, expandPred, expandClassP, runExpanded, markExpanded, E)
 import Language.Haskell.TH.Desugar as DS (DsMonad)
-import Language.Haskell.TH.Expand (Expanded, expandPred, expandClassP, runExpanded, markExpanded, E)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
@@ -120,6 +114,7 @@ simplifyPredicate context _ = context
 -- | Test the context (predicates) against both the instances in the Q
 -- monad and the additional instances that have accumulated in the
 -- State monad.
+#if 0
 testContextWithState :: forall m pred. (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred) m) => [pred] -> m Bool
 testContextWithState context = do
   -- Is the instance already in the Q monad?
@@ -133,6 +128,7 @@ testContextWithState context = do
     where
       testPredicate :: pred -> m Bool
       testPredicate predicate = maybe False (not . null) <$> (Map.lookup predicate <$> get)
+#endif
 
 -- | Unify the two arguments of an EqualP predicate, return a list of
 -- simpler predicates associating types with a variables.
@@ -167,6 +163,11 @@ consistent (AppT (AppT EqualityT _) (VarT _)) = return True
 consistent (AppT (AppT EqualityT a) b) | a == b = return True
 consistent (AppT (AppT EqualityT _) _) = return False
 consistent typ = error $ "Unexpected Pred: " ++ pprint typ
+
+unfoldInstance :: Type -> Maybe (Name, [Type])
+unfoldInstance (ConT name) = Just (name, [])
+unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
+unfoldInstance _ = Nothing
 #else
 consistent (EqualP (AppT a b) (AppT c d)) =
     -- I'm told this is incorrect in the presence of type functions
@@ -178,28 +179,3 @@ consistent (EqualP _ _) = return False
 consistent (ClassP className typeParameters) =
     (not . null) <$> reifyInstancesWithContext className typeParameters -- Do we need additional context here?
 #endif
-
--- | Apply a filter such as 'simpleMissingInstanceTest' to a list of
--- instances, resulting in a non-overlapping list of instances.
-missingInstances :: Quasi m => (Dec -> m Bool) -> m [Dec] -> m [Dec]
-missingInstances test decs = decs >>= mapM (\ dec -> test dec >>= \ flag -> return $ if flag then Just dec else Nothing) >>= return . catMaybes
-
--- | Return True if no instance matches the types (ignoring the instance context.)
--- Passing qReifyInstance as the reifyInstanceFunction argument gives a naive test,
--- passing qReifyInstanceWithContext will also accept (return True for) instances
--- which...
-simpleMissingInstanceTest :: Quasi m => Dec -> m Bool
-simpleMissingInstanceTest dec@(InstanceD _ typ _) =
-    case unfoldInstance typ of
-      Just (name, types) -> do
-        -- trace ("name: " ++ show name ++ ", types=" ++ show types) (return ())
-        insts <- qReifyInstances name types
-        -- trace ("insts: " ++ show (map pprint insts)) (return ())
-        return $ null insts
-      Nothing -> error $ "simpleMissingInstanceTest - invalid instance: " ++ pprint dec
-simpleMissingInstanceTest dec = error $ "simpleMissingInstanceTest - invalid instance: " ++ pprint dec
-
-unfoldInstance :: Type -> Maybe (Name, [Type])
-unfoldInstance (ConT name) = Just (name, [])
-unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
-unfoldInstance _ = Nothing

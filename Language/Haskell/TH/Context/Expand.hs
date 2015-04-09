@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Language.Haskell.TH.Expand
+module Language.Haskell.TH.Context.Expand
     ( Expanded(markExpanded, runExpanded)
     , expandType
     , expandPred
