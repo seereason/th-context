@@ -84,15 +84,17 @@ typeArity ListT = return 1
 typeArity (VarT _) = return 1
 typeArity (TupleT n) = return n
 typeArity (AppT t _) = typeArity t >>= \ n -> return $ n - 1
-typeArity (ConT name) = foldName decArity (\_ _ _ -> return 0) infoArity name
+typeArity (ConT name) = qReify name >>= infoArity
     where
+      infoArity (TyConI dec) = decArity dec
+      infoArity (PrimTyConI _ _ _) = return 0
+      infoArity (FamilyI dec _) = decArity dec
+      infoArity info = error $ "typeArity - unexpected: " ++ pprint' info
       decArity (DataD _ _ vs _ _) = return $ length vs
       decArity (NewtypeD _ _ vs _ _) = return $ length vs
       decArity (TySynD _ vs t) = typeArity t >>= \ n -> return $ n + length vs
       decArity (FamilyD _ _ vs _mk) = return $ {- not sure what to do with the kind mk here -} length vs
       decArity dec = error $ "decArity - unexpected: " ++ show dec
-      infoArity (FamilyI dec _) = decArity dec
-      infoArity info = error $ "typeArity - unexpected: " ++ pprint' info
 typeArity typ = error $ "typeArity - unexpected type: " ++ show typ
 
 -- | Combine a decFn and a primFn to make a nameFn in the Quasi monad.

@@ -9,12 +9,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 module Language.Haskell.TH.TypeGraph
-    ( typeArity
-      -- * Subtype graph
+    ( VertexStatus(..)
     , typeGraphEdges
-    , VertexStatus(..)
     , typeGraphVertices
-    , subtypeGraph
+    , typeGraph
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
@@ -132,36 +130,12 @@ typeGraphEdges augment types = do
 -- from a type to one of the types it contains.  Thus, each edge
 -- represents a primitive lens, and each path in the graph is a
 -- composition of lenses.
-subtypeGraph :: (DsMonad m, Expanded Type typ, Ord typ, Show typ, node ~ typ, key ~ typ) =>
+typeGraph :: (DsMonad m, Expanded Type typ, Ord typ, Show typ, node ~ typ, key ~ typ) =>
                 (typ -> m (VertexStatus typ)) -> [typ] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
-subtypeGraph augment types = do
+typeGraph augment types = do
   typeGraphEdges augment types >>= return . graphFromEdges . triples
     where
       triples mp = map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
-
-typeArity :: Quasi m => Type -> m Int
-typeArity (ForallT _ _ typ) = typeArity typ
-typeArity (VarT _) = return 1
-typeArity ListT = return 1
-typeArity (TupleT n) = return n
-typeArity (AppT t _) = typeArity t >>= \ n -> return $ n - 1
-typeArity (ConT name) =
-    do info <- qReify name
-       case info of
-         (TyConI dec) -> decArity dec
-         (PrimTyConI _ _ _) -> return 0
-         (FamilyI dec _) -> decArity dec
-         _ -> error $ "typeArity - unexpected type: " ++ pprint name ++ " -> " ++ pprint' info
-    where
-      decArity (DataD _ _ vs _ _) = return $ length vs
-      decArity (NewtypeD _ _ vs _ _) = return $ length vs
-      decArity (TySynD _ vs t) = typeArity t >>= \ n -> return $ n + length vs
-      decArity (FamilyD _ _ vs _mk) = return $ {- not sure what to do with the kind mk here -} length vs
-      decArity dec = error $ "decArity - unexpected: " ++ pprint' dec
-typeArity typ = error $ "typeArity - unexpected type: " ++ pprint' typ
-
-pprint' :: Ppr a => a -> [Char]
-pprint' typ = unwords $ words $ pprint typ
 
 {-
 type FieldType = (Int, Either StrictType VarStrictType)

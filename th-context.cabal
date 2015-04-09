@@ -25,6 +25,7 @@ library
   build-depends:
     base >= 4.2 && < 5,
     containers,
+    data-default,
     haskell-src-exts,
     mtl,
     syb,
