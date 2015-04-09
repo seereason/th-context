@@ -13,13 +13,11 @@ module Language.Haskell.TH.Fold
     , constructorName
     -- * Queries
     , typeArity
-    , hasPrimitiveType
     , unlifted
     -- * Pretty print without extra whitespace
     , pprint'
     ) where
 
-import Control.Applicative ((<$>), (<*>))
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 import Language.Haskell.Exts.Syntax ()
@@ -97,35 +95,6 @@ constructorName (ForallC _ _ con) = constructorName con
 constructorName (NormalC name _) = name
 constructorName (RecC name _) = name
 constructorName (InfixC _ name _) = name
-
--- | Is this the name of a primitive type, or does it contain any
--- primitive type names?
-class HasPrimitiveType t where
-    hasPrimitiveType :: Quasi m => t -> m Bool
-
-instance HasPrimitiveType Name where
-    hasPrimitiveType name = qReify name >>= hasPrimitiveType
-
-instance HasPrimitiveType Info where
-    hasPrimitiveType (PrimTyConI _ _ _) = return True
-    hasPrimitiveType _ = return False
-
-instance HasPrimitiveType Type where
-    hasPrimitiveType (ConT name) = hasPrimitiveType name
-    hasPrimitiveType (AppT t1 t2) = (||) <$> hasPrimitiveType t1 <*> hasPrimitiveType t2
-    hasPrimitiveType _ = return False
-
-instance HasPrimitiveType Dec where
-    hasPrimitiveType (TySynD _ _ typ) = hasPrimitiveType typ
-    hasPrimitiveType (NewtypeD _ _ _ con _) = hasPrimitiveType con
-    hasPrimitiveType (DataD _ _ _ cons _) = or <$> mapM hasPrimitiveType cons
-    hasPrimitiveType dec = error $ "hasPrimiveType: " ++ show dec
-
-instance HasPrimitiveType Con where
-    hasPrimitiveType (ForallC _ _ con) = hasPrimitiveType con
-    hasPrimitiveType (NormalC _ ts) = or <$> mapM (hasPrimitiveType . snd) ts
-    hasPrimitiveType (RecC _ ts) = or <$> mapM (\ (_, _, t) -> hasPrimitiveType t) ts
-    hasPrimitiveType (InfixC t1 _ t2) = or <$> mapM (hasPrimitiveType . snd) [t1, t2]
 
 -- | Does the type or the declaration to which it refers contain a
 -- primitive (aka unlifted) type?
