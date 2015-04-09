@@ -10,13 +10,12 @@ module Language.Haskell.TH.Fold
     , prettyField
     , constructorFields
     , foldShape
-      -- * Name reification
-    , foldName
     -- * Constructor deconstructors
     , constructorName
     -- * Queries
     , typeArity
-    , HasPrimitiveType(hasPrimitiveType)
+    , hasPrimitiveType
+    , unlifted
     -- * Pretty print without extra whitespace
     , pprint'
     ) where
@@ -97,26 +96,6 @@ typeArity (ConT name) = qReify name >>= infoArity
       decArity dec = error $ "decArity - unexpected: " ++ show dec
 typeArity typ = error $ "typeArity - unexpected type: " ++ show typ
 
--- | Combine a decFn and a primFn to make a nameFn in the Quasi monad.
--- This is used to build the first argument to the foldType function
--- when we need to know whether the name refers to a declared or a
--- primitive type.
-foldName :: Quasi m =>
-            (Dec -> m r)
-         -> (Name -> Int -> Bool -> m r)
-         -> (Info -> m r)
-         -> Name -> m r
-foldName decFn primFn otherFn name = do
-  info <- qReify name
-  case info of
-    (TyConI dec) ->
-        decFn dec
-    (PrimTyConI a b c) -> primFn a b c
-    _ -> otherFn info
-
--- indent :: String -> String -> String
--- indent i s = intercalate "\n" (map (i ++) (lines s))
-
 pprint' :: Ppr a => a -> [Char]
 pprint' typ = unwords $ words $ pprint typ
 
@@ -126,47 +105,17 @@ constructorName (NormalC name _) = name
 constructorName (RecC name _) = name
 constructorName (InfixC _ name _) = name
 
--- | Returns true if any of the fields of the declaration are
--- primitive types.  Does not recurse into sub-types, but needs
--- the Quasi monad to see whether the named types are primitive.
-{-
-anyPrimitiveFields :: forall m. Quasi m => Dec -> [Con] -> m Bool
-anyPrimitiveFields _dec cons =
-    or <$> mapM (\ con -> foldCon (fldsFn con) con) cons
-    where
-      fldsFn :: Name -> [FieldType] -> m Bool
-      fldsFn _name flds = or <$> mapM fldFn flds
-      fldFn :: FieldType -> m Bool
-      fldFn fld = foldType nfn afn ofn (fType fld)
-      nfn :: Name -> m Bool
-      nfn name = foldName (\ _ -> return False) (\ _ _ _ -> return True) {- primitive! -} name
-      afn :: Type -> Type -> m Bool
-      afn t1 t2 = (||) <$> foldType nfn afn ofn t1 <*> foldType nfn afn ofn t2
-      ofn :: m Bool
-      ofn = return False
-
--- | Is there a primitive type name inside this Type?
-isPrimitiveType :: Quasi m => Type -> m Bool
-isPrimitiveType = foldType nfn afn ofn
-    where
-
--- | Is there a primitive type name inside this Type declaration?
-primitiveDec :: Quasi m => Dec -> m Bool
-primitiveDec = foldDec primitiveType (\ cons -> or <$> mapM primitiveCon cons)
-
-primitiveCon :: Quasi m => Con -> Name -> [FieldType] -> m Bool
-primitiveCon = foldCon ffn
-    where
-      ffn :: Name -> [FieldType] -> m Bool
-      ffn name flds = or <$> mapM (primitiveType . fType . snd) flds
--}
-
--- | Is this the name of a primitive type, or does it contain any primitive type names?
+-- | Is this the name of a primitive type, or does it contain any
+-- primitive type names?
 class HasPrimitiveType t where
     hasPrimitiveType :: Quasi m => t -> m Bool
 
 instance HasPrimitiveType Name where
-    hasPrimitiveType = foldName (\ _ -> return False) (\ _ _ _ -> return True) (\ _ -> return False)
+    hasPrimitiveType name = qReify name >>= hasPrimitiveType
+
+instance HasPrimitiveType Info where
+    hasPrimitiveType (PrimTyConI _ _ _) = return True
+    hasPrimitiveType _ = return False
 
 instance HasPrimitiveType Type where
     hasPrimitiveType (ConT name) = hasPrimitiveType name
@@ -184,3 +133,17 @@ instance HasPrimitiveType Con where
     hasPrimitiveType (NormalC _ ts) = or <$> mapM (hasPrimitiveType . snd) ts
     hasPrimitiveType (RecC _ ts) = or <$> mapM (\ (_, _, t) -> hasPrimitiveType t) ts
     hasPrimitiveType (InfixC t1 _ t2) = or <$> mapM (hasPrimitiveType . snd) [t1, t2]
+
+-- | Does the type or the declaration to which it refers contain a
+-- primitive (aka unlifted) type?
+class IsUnlifted t where
+    unlifted :: Quasi m => t -> m Bool
+
+instance IsUnlifted Type where
+    unlifted (ForallT _ _ typ) = unlifted typ
+    unlifted (ConT name) = qReify name >>= unlifted
+    unlifted _ = return False
+
+instance IsUnlifted Info where
+    unlifted (PrimTyConI _ _ _) = return True
+    unlifted _ = return False
