@@ -12,7 +12,8 @@ import Data.Set as Set (Set, fromList, toList, null, difference, empty)
 import Data.Text (Text)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (reifyInstancesWithContext, testContext, missingInstances, simpleMissingInstanceTest)
+import Language.Haskell.TH.Context (reifyInstancesWithContext)
+import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.ReifyMany
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
