@@ -1,3 +1,5 @@
+-- | Naive instance filtering (as in @th-reify-many@.)  Mostly for comparison
+-- to @qReifyInstancesWithContext@.
 module Language.Haskell.TH.Context.Simple
     ( missingInstances
     , simpleMissingInstanceTest
@@ -5,7 +7,7 @@ module Language.Haskell.TH.Context.Simple
 
 import Data.Maybe (catMaybes)
 import Language.Haskell.TH
-import Language.Haskell.TH.Syntax hiding (lift)
+import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
 -- | Apply a filter such as 'simpleMissingInstanceTest' to a list of

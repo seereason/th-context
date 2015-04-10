@@ -11,32 +11,41 @@
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 module Language.Haskell.TH.Context
     ( InstMap
-    , evalInstMap
     , reifyInstancesWithContext
+    , tellInstance
+    -- * State/writer monad runners
+    , evalContextState
+    , execContextWriter
+    , execContext
+    , runContext
     ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (filterM)
 import Control.Monad.State (MonadState, StateT, get, modify, evalStateT)
+import Control.Monad.Writer (MonadWriter, tell, WriterT, execWriterT, runWriterT)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
-import Data.Map as Map (Map, lookup, insert)
+import Data.Map as Map (Map, lookup, insert, singleton, elems)
 import Data.Monoid (mempty)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (Expanded, expandPred, expandClassP, runExpanded, markExpanded, E)
+import Language.Haskell.TH.Context.Helpers (pprint')
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
 type InstMap pred = Map pred [InstanceDec]
 
-evalInstMap :: Monad m => StateT (InstMap (E Pred)) m r -> m r
-evalInstMap action = evalStateT action (mempty :: (InstMap (E Pred)))
-
 -- | Like 'qReifyInstances', looks up all the instances that match the
--- given class name and argument types.  However, unlike
--- 'qReifyInstances', only the ones that satisfy all the instance
--- context predicates are returned.
+-- given class name and argument types.  Unlike 'qReifyInstances',
+-- only the ones that satisfy all the instance context predicates in
+-- the environment are returned.  If there is already an instance that
+-- satisfies the predicate built from the name and types it is
+-- returned.  If not, this new predicate is inserted into the state
+-- monad 'InstMap', associated with an empty list of predicates, and the
+-- empty list is returned.  Later the caller can use 'tellInstance' to
+-- associate instances with the predicate.
 reifyInstancesWithContext :: (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred) m) =>
                              Name -> [Type] -> m [InstanceDec]
 reifyInstancesWithContext className typeParameters = do
@@ -163,11 +172,6 @@ consistent (AppT (AppT EqualityT _) (VarT _)) = return True
 consistent (AppT (AppT EqualityT a) b) | a == b = return True
 consistent (AppT (AppT EqualityT _) _) = return False
 consistent typ = error $ "Unexpected Pred: " ++ pprint typ
-
-unfoldInstance :: Type -> Maybe (Name, [Type])
-unfoldInstance (ConT name) = Just (name, [])
-unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
-unfoldInstance _ = Nothing
 #else
 consistent (EqualP (AppT a b) (AppT c d)) =
     -- I'm told this is incorrect in the presence of type functions
@@ -179,3 +183,41 @@ consistent (EqualP _ _) = return False
 consistent (ClassP className typeParameters) =
     (not . null) <$> reifyInstancesWithContext className typeParameters -- Do we need additional context here?
 #endif
+
+-- | Declare an instance to the state and writer monads.  After this,
+-- the instance predicate (constructed from class namd and type
+-- parameters) will be considered part of the context for subsequent
+-- calls to qReifyInstancesWithContext.  The instance will be returned
+-- when the writer monad exists so it can be spliced into to program.
+tellInstance :: (DsMonad m, Expanded Pred pred, Ord pred,
+                 MonadWriter (InstMap pred) m, MonadState (InstMap pred) m, Quasi m) =>
+                Dec -> m ()
+tellInstance inst@(InstanceD _ instanceType _) =
+    do let Just (className, typeParameters) = unfoldInstance instanceType
+       p <- expandPred (ClassP className typeParameters)
+       st <- get
+       case Map.lookup p st of
+         Just (_ : _) -> return ()
+         _ -> do -- trace ("  " ++ pprint' instanceType) (return ())
+                 tell $ Map.singleton p [inst]
+                 modify $ Map.insert p [inst]
+tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint' inst
+
+unfoldInstance :: Type -> Maybe (Name, [Type])
+unfoldInstance (ConT name) = Just (name, [])
+unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
+unfoldInstance _ = Nothing
+
+evalContextState :: Monad m => StateT (InstMap (E Pred)) m r -> m r
+evalContextState action = evalStateT action (mempty :: (InstMap (E Pred)))
+
+execContextWriter :: Monad m => WriterT (InstMap (E Pred)) m () -> m (InstMap (E Pred))
+execContextWriter = execWriterT
+
+-- | Typical use: run both state and writer monads to generate a list of
+-- instance declarations.
+execContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) () -> m [Dec]
+execContext action = (concat . Map.elems) <$> (execWriterT $ evalContextState action)
+
+runContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) r -> m (r, (InstMap (E Pred)))
+runContext action = runWriterT $ evalContextState action

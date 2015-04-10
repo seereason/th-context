@@ -1,3 +1,7 @@
+-- | The 'Expanded' class helps keep track of which 'Type' values have
+-- been fully expanded to a canonical form.  This lets us use the 'Eq'
+-- and 'Ord' relationships on 'Type' and 'Pred' values when reasoning
+-- about instance context.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -21,13 +25,16 @@ import Language.Haskell.TH.Instances ()
 
 -- | This class lets us use the same expand* functions to work with
 -- specially marked expanded types or with the original types.
-class Expanded a b | b -> a where
-    markExpanded :: a -> b -- was expanded
-    runExpanded :: b -> a
+class Expanded un ex | ex -> un where
+    markExpanded :: un -> ex -- | Unsafely mark a value as expanded
+    runExpanded :: ex -> un -- | Strip mark off an expanded value
 
+-- | Apply the th-desugar expand function to a 'Type' and mark it as expanded.
 expandType :: (DsMonad m, Expanded Type e)  => Type -> m e
 expandType typ = markExpanded <$> DS.typeToTH <$> (DS.dsType typ >>= DS.expand)
 
+-- | Apply the th-desugar expand function to a 'Pred' and mark it as expanded.
+-- Note that the definition of 'Pred' changed in template-haskell-2.10.0.0.
 expandPred :: (DsMonad m, Expanded Pred e)  => Pred -> m e
 #if MIN_VERSION_template_haskell(2,10,0)
 expandPred pred = markExpanded <$> expandType pred
@@ -36,6 +43,7 @@ expandPred (ClassP className typeParameters) = markExpanded <$> ClassP className
 expandPred (EqualP type1 type2) = markExpanded <$> (EqualP <$> expandType type1 <*> expandType type2)
 #endif
 
+-- | Expand a list of 'Type' and build an expanded 'ClassP' 'Pred'.
 expandClassP :: (DsMonad m, Expanded Pred e)  => Name -> [Type] -> m e
 expandClassP className typeParameters =
     markExpanded <$>
@@ -45,7 +53,7 @@ expandClassP className typeParameters =
       ClassP className <$> mapM expandType typeParameters
 #endif
 
--- | A wrapper denoting an expanded value with provided Expanded instances.
+-- | A concrete type for which Expanded instances are declared below.
 newtype E a = E a deriving (Eq, Ord, Show)
 
 instance Expanded Type Type where

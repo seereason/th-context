@@ -1,6 +1,7 @@
+-- | Helper functions for dealing with record fields, type shape, type
+-- arity, primitive types, and pretty printing.
 {-# LANGUAGE CPP, DeriveDataTypeable, RankNTypes, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
--- | Some hopefully straightforward utility types, functions, and instances for template haskell.
 module Language.Haskell.TH.Context.Helpers
     ( -- * Declaration shape
       FieldType(FieldType, fPos, fNameAndType)
@@ -65,12 +66,20 @@ foldShape dataFn recordFn enumFn wrapperFn cons =
       pairs ->
           dataFn pairs
 
+constructorName :: Con -> Name
+constructorName (ForallC _ _ con) = constructorName con
+constructorName (NormalC name _) = name
+constructorName (RecC name _) = name
+constructorName (InfixC _ name _) = name
+
 constructorFields :: Con -> [FieldType]
 constructorFields (ForallC _ _ con) = constructorFields con
 constructorFields (NormalC _ ts) = map (uncurry FieldType) (zip [1..] (map Left ts))
 constructorFields (RecC _ ts) = map (uncurry FieldType) (zip [1..] (map Right ts))
 constructorFields (InfixC t1 _ t2) = map (uncurry FieldType) [(1, Left t1), (2, Left t2)]
 
+-- | Compute the arity of a type - the number of type parameters that
+-- must be applied to it in order to obtain a concrete type.
 typeArity :: Quasi m => Type -> m Int
 typeArity (ForallT _ _ typ) = typeArity typ
 typeArity ListT = return 1
@@ -90,18 +99,15 @@ typeArity (ConT name) = qReify name >>= infoArity
       decArity dec = error $ "decArity - unexpected: " ++ show dec
 typeArity typ = error $ "typeArity - unexpected type: " ++ show typ
 
+-- | Pretty print a 'Ppr' value on a single line with each block of
+-- white space (newlines, tabs, etc.) converted to a single space.
 pprint' :: Ppr a => a -> [Char]
 pprint' typ = unwords $ words $ pprint typ
 
-constructorName :: Con -> Name
-constructorName (ForallC _ _ con) = constructorName con
-constructorName (NormalC name _) = name
-constructorName (RecC name _) = name
-constructorName (InfixC _ name _) = name
-
 -- | Does the type or the declaration to which it refers contain a
--- primitive (aka unlifted) type?  This will traverse down any type
--- to the named types, and then check whether these are primitive.
+-- primitive (aka unlifted) type?  This will traverse down any 'Dec'
+-- to the named types, and then check whether any of their 'Info'
+-- records are 'PrimTyConI' values.
 class IsUnlifted t where
     unlifted :: Quasi m => t -> m Bool
 
