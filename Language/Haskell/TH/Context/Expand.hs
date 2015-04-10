@@ -60,17 +60,19 @@ instance Expanded Type Type where
     markExpanded = id
     runExpanded = id
 
-instance Expanded Pred Pred where
-    markExpanded = id
-    runExpanded = id
-
 instance Expanded Type (E Type) where
     markExpanded = E
     runExpanded (E x) = x
 
+#if !MIN_VERSION_template_haskell(2,10,0)
+instance Expanded Pred Pred where
+    markExpanded = id
+    runExpanded = id
+
 instance Expanded Pred (E Pred) where
     markExpanded = E
     runExpanded (E x) = x
+#endif
 
 instance Ppr a => Ppr (E a) where
     ppr (E x) = ppr x
