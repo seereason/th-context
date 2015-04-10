@@ -17,13 +17,13 @@ module Language.Haskell.TH.TypeGraph
 
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
+import Data.Monoid (mempty)
 #endif
 import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Control.Monad.Trans (lift)
 import Data.Default (Default(def))
 import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.Map as Map (Map, keys, lookup, toList, update, alter)
-import Data.Monoid (mempty)
 import Data.Set as Set (insert, Set, empty, fromList, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)

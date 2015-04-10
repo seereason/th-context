@@ -20,14 +20,17 @@ module Language.Haskell.TH.Context
     , runContext
     ) where
 
+#if __GLASGOW_HASKELL__ < 709
 import Control.Applicative ((<$>), (<*>))
+import Data.Monoid (mempty)
+#endif
 import Control.Monad (filterM)
 import Control.Monad.State (MonadState, StateT, get, modify, evalStateT)
 import Control.Monad.Writer (MonadWriter, tell, WriterT, execWriterT, runWriterT)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert, singleton, elems)
-import Data.Monoid (mempty)
+import Data.Maybe (isJust)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (Expanded, expandPred, expandClassP, runExpanded, markExpanded, E)
 import Language.Haskell.TH.Context.Helpers (pprint')
@@ -163,7 +166,7 @@ consistent :: (DsMonad m, Expanded Pred pred, Ord pred, MonadState (InstMap pred
 consistent typ
     | isJust (unfoldInstance typ) =
         let Just (className, typeParameters) = unfoldInstance typ in
-        (not . null) <$> qReifyInstancesWithContext className typeParameters
+        (not . null) <$> reifyInstancesWithContext className typeParameters
 consistent (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
     -- I'm told this is incorrect in the presence of type functions
     (&&) <$> consistent (AppT (AppT EqualityT a) c) <*> consistent (AppT (AppT EqualityT b) d)
@@ -194,7 +197,11 @@ tellInstance :: (DsMonad m, Expanded Pred pred, Ord pred,
                 Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
-       p <- expandPred (ClassP className typeParameters)
+#if MIN_VERSION_template_haskell(2,10,0)
+       p <- expandPred $ foldl AppT (ConT className) typeParameters
+#else
+       p <- expandPred $ ClassP className typeParameters
+#endif
        st <- get
        case Map.lookup p st of
          Just (_ : _) -> return ()

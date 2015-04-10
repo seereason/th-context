@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Language.Haskell.TH.Context.Expand
     ( Expanded(markExpanded, runExpanded)
     , expandType
@@ -22,6 +23,7 @@ import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
 import Language.Haskell.TH.Instances ()
+import Prelude hiding (pred)
 
 -- | This class lets us use the same expand* functions to work with
 -- specially marked expanded types or with the original types.
@@ -44,11 +46,11 @@ expandPred (EqualP type1 type2) = markExpanded <$> (EqualP <$> expandType type1 
 #endif
 
 -- | Expand a list of 'Type' and build an expanded 'ClassP' 'Pred'.
-expandClassP :: (DsMonad m, Expanded Pred e)  => Name -> [Type] -> m e
+expandClassP :: forall m e. (DsMonad m, Expanded Pred e)  => Name -> [Type] -> m e
 expandClassP className typeParameters =
     markExpanded <$>
 #if MIN_VERSION_template_haskell(2,10,0)
-      expandType $ foldl AppT (ConT className) typeParameters
+      (expandType $ foldl AppT (ConT className) typeParameters) :: m e
 #else
       ClassP className <$> mapM expandType typeParameters
 #endif
