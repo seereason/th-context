@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
@@ -10,7 +11,7 @@ import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Context.Expand (expandType, runExpanded, E)
-import Language.Haskell.TH.Context.Helpers (typeArity)
+import Language.Haskell.TH.Context.Helpers (pprint', typeArity)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.TypeGraph (typeGraphVertices, typeGraphEdges, VertexStatus(Vertex))
@@ -26,7 +27,7 @@ tests = do
                                   runQ [t|Type|] >>=
                                   expandType >>= \ (typ :: E Type) ->
                                   typeGraphVertices (const $ return Vertex) [typ] >>=
-                                  runQ . lift . map runExpanded . Set.toList)) subtypesOfType
+                                  runQ . lift . map (pprint' . unReify . runExpanded) . Set.toList)) subtypesOfType
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Type" $ do
@@ -34,7 +35,7 @@ tests = do
                                 runQ [t|Type|] >>=
                                 expandType >>= \ (typ :: E Type) ->
                                 typeGraphEdges (const $ return Vertex) [typ] >>=
-                                runQ . lift . map toStrings . Map.toList)) typeEdges
+                                runQ . lift . map toStrings' . Map.toList)) typeEdges
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Dec" $ do
@@ -42,7 +43,7 @@ tests = do
                                 runQ [t|Dec|] >>=
                                 expandType >>= \ (typ :: E Type) ->
                                 typeGraphEdges (const $ return Vertex) [typ] >>=
-                                runQ . lift . map toStrings . Map.toList)) decEdges
+                                runQ . lift . map toStrings' . Map.toList)) decEdges
         `shouldBe` noDifferences
 
   it "can find the subtypes of Dec" $ do
@@ -50,7 +51,7 @@ tests = do
                                 runQ [t|Dec|] >>=
                                 expandType >>= \ (typ :: E Type) ->
                                 typeGraphVertices (const $ return Vertex) [typ] >>=
-                                runQ . lift . map (unwords . words . pprint) . Set.toList)) subtypesOfDec
+                                runQ . lift . map (pprint' . unReify . runExpanded) . Set.toList)) subtypesOfDec
         `shouldBe` noDifferences
 
   it "can find the arity 0 subtypes of Dec" $ do
@@ -59,299 +60,29 @@ tests = do
                                 expandType >>= \ (typ :: E Type) ->
                                 typeGraphVertices (const $ return Vertex) [typ] >>=
                                 filterM (\ t -> typeArity (runExpanded t) >>= \ a -> return (a == 0)) . Set.toList >>=
-                                runQ . lift . map (unwords . words . pprint))) arity0SubtypesOfDec
+                                runQ . lift . map (pprint' . unReify . runExpanded))) arity0SubtypesOfDec
         `shouldBe` noDifferences
 
-subtypesOfType :: Set Type
+subtypesOfType :: Set String
 subtypesOfType =
-    fromList
-      $(lookupTypeName "ByteArray#" >>= \ (Just byteArray) ->
-        lookupTypeName "Char#" >>= \ (Just char) ->
-        lookupTypeName "Int#" >>= \ (Just int) ->
-        sequence
-          [ [t| String |],
-            [t| [Char] |],
-            [t| [Pred] |],
-            [t| [TyVarBndr] |],
-            [t| [Type] |],
-            conT byteArray,
-            conT char,
-            conT int,
-            [t| Char |],
-            [t| Cxt |],
-            [t| Int |],
-            [t| Integer |],
-            [t| Kind |],
-            [t| ModName |],
-            [t| Name |],
-            [t| NameFlavour |],
-            [t| NameSpace |],
-            [t| OccName |],
-            [t| PkgName |],
-            [t| Pred |],
-            [t| TyLit |],
-            [t| TyVarBndr |],
-            [t| Type |],
-            (return ListT)
-          ] >>= lift)
+    fromList ["BigNat","ByteArray#","Char","Char#","Cxt","Int","Int#","Integer","Kind","ModName","Name","NameFlavour","NameSpace","OccName","PkgName","Pred","String","TyLit","TyVarBndr","Type","[Char]","[Pred]","[TyVarBndr]","[]"]
 
 decEdges :: Set (String, [String])
 decEdges =
     fromList
-      [("(,)",[]),
-       ("(,,)",[]),
-       ("Data.Maybe.Maybe",["a_0"]),
-       ("GHC.Prim.ByteArray#",[]),
-       ("GHC.Prim.Char#",[]),
-       ("GHC.Prim.Int#",[]),
-       ("GHC.Prim.Word#",[]),
-       ("GHC.Real.Ratio",["a_0"]),
-       ("GHC.Types.Char",["GHC.Prim.Char#"]),
-       ("GHC.Word.Word8",["GHC.Prim.Word#"]),
-       ("Language.Haskell.TH.Syntax.Callconv",[]),
-       ("Language.Haskell.TH.Syntax.FamFlavour",[]),
-       ("Language.Haskell.TH.Syntax.FixityDirection",[]),
-       ("Language.Haskell.TH.Syntax.Inline",[]),
-       ("Language.Haskell.TH.Syntax.Name",["Language.Haskell.TH.Syntax.NameFlavour","Language.Haskell.TH.Syntax.OccName"]),
-       ("Language.Haskell.TH.Syntax.NameFlavour",["GHC.Prim.Int#","Language.Haskell.TH.Syntax.ModName","Language.Haskell.TH.Syntax.NameSpace","Language.Haskell.TH.Syntax.PkgName"]),
-       ("Language.Haskell.TH.Syntax.NameSpace",[]),
-       ("Language.Haskell.TH.Syntax.Role",[]),
-       ("Language.Haskell.TH.Syntax.RuleMatch",[]),
-       ("Language.Haskell.TH.Syntax.Safety",[]),
-       ("Language.Haskell.TH.Syntax.Strict",[]),
-       ("[GHC.Types.Char]",["GHC.Types.Char","[]"]),
-       ("[]",[]),
-       ("a_0",[]),
-       ("(,) Language.Haskell.TH.Syntax.Guard",["Language.Haskell.TH.Syntax.Guard","(,)"]),
-       ("(,) Language.Haskell.TH.Syntax.Name",["Language.Haskell.TH.Syntax.Name","(,)"]),
-       ("(,) Language.Haskell.TH.Syntax.Strict",["Language.Haskell.TH.Syntax.Strict","(,)"]),
-       ("(,,) Language.Haskell.TH.Syntax.Name",["Language.Haskell.TH.Syntax.Name","(,,)"]),
-       ("(,,) Language.Haskell.TH.Syntax.Name Language.Haskell.TH.Syntax.Strict",["(,,) Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Strict"]),
-       ("(Language.Haskell.TH.Syntax.Guard, Language.Haskell.TH.Syntax.Exp)",["(,) Language.Haskell.TH.Syntax.Guard","Language.Haskell.TH.Syntax.Exp"]),
-       ("(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Exp)",["(,) Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Exp"]),
-       ("(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Pat)",["(,) Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Pat"]),
-       ("(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Strict, Language.Haskell.TH.Syntax.Type)",["(,,) Language.Haskell.TH.Syntax.Name Language.Haskell.TH.Syntax.Strict","Language.Haskell.TH.Syntax.Type"]),
-       ("(Language.Haskell.TH.Syntax.Strict, Language.Haskell.TH.Syntax.Type)",["(,) Language.Haskell.TH.Syntax.Strict","Language.Haskell.TH.Syntax.Type"]),
-       ("Data.Maybe.Maybe Language.Haskell.TH.Syntax.Exp",["Data.Maybe.Maybe","Language.Haskell.TH.Syntax.Exp"]),
-       ("Data.Maybe.Maybe Language.Haskell.TH.Syntax.Inline",["Data.Maybe.Maybe","Language.Haskell.TH.Syntax.Inline"]),
-       ("Data.Maybe.Maybe Language.Haskell.TH.Syntax.Kind",["Data.Maybe.Maybe","Language.Haskell.TH.Syntax.Kind"]),
-       ("GHC.Base.String",["[GHC.Types.Char]"]),
-       ("GHC.Integer.Type.Integer",["GHC.Prim.ByteArray#","GHC.Prim.Int#"]),
-       ("GHC.Real.Ratio GHC.Integer.Type.Integer",["GHC.Real.Ratio","GHC.Integer.Type.Integer"]),
-       ("GHC.Real.Rational",["GHC.Real.Ratio GHC.Integer.Type.Integer"]),
-       ("GHC.Types.Int",["GHC.Prim.Int#"]),
-       ("Language.Haskell.TH.Syntax.AnnTarget",["Language.Haskell.TH.Syntax.Name"]),
-       ("Language.Haskell.TH.Syntax.Body",["[(Language.Haskell.TH.Syntax.Guard, Language.Haskell.TH.Syntax.Exp)]","Language.Haskell.TH.Syntax.Exp"]),
-       ("Language.Haskell.TH.Syntax.Clause",["[Language.Haskell.TH.Syntax.Dec]","[Language.Haskell.TH.Syntax.Pat]","Language.Haskell.TH.Syntax.Body"]),
-       ("Language.Haskell.TH.Syntax.Con",["[Language.Haskell.TH.Syntax.StrictType]","[Language.Haskell.TH.Syntax.TyVarBndr]","[Language.Haskell.TH.Syntax.VarStrictType]","Language.Haskell.TH.Syntax.Con","Language.Haskell.TH.Syntax.Cxt","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.StrictType"]),
-       ("Language.Haskell.TH.Syntax.Cxt",["[Language.Haskell.TH.Syntax.Pred]"]),
-       ("Language.Haskell.TH.Syntax.Dec",["Data.Maybe.Maybe Language.Haskell.TH.Syntax.Kind","[Language.Haskell.TH.Syntax.Clause]","[Language.Haskell.TH.Syntax.Con]","[Language.Haskell.TH.Syntax.Dec]","[Language.Haskell.TH.Syntax.FunDep]","[Language.Haskell.TH.Syntax.Name]","[Language.Haskell.TH.Syntax.Role]","[Language.Haskell.TH.Syntax.TySynEqn]","[Language.Haskell.TH.Syntax.TyVarBndr]","[Language.Haskell.TH.Syntax.Type]","Language.Haskell.TH.Syntax.Body","Language.Haskell.TH.Syntax.Con","Language.Haskell.TH.Syntax.Cxt","Language.Haskell.TH.Syntax.FamFlavour","Language.Haskell.TH.Syntax.Fixity","Language.Haskell.TH.Syntax.Foreign","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Pat","Language.Haskell.TH.Syntax.Pragma","Language.Haskell.TH.Syntax.TySynEqn","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.Exp",["Data.Maybe.Maybe Language.Haskell.TH.Syntax.Exp","[(Language.Haskell.TH.Syntax.Guard, Language.Haskell.TH.Syntax.Exp)]","[Language.Haskell.TH.Syntax.Dec]","[Language.Haskell.TH.Syntax.Exp]","[Language.Haskell.TH.Syntax.FieldExp]","[Language.Haskell.TH.Syntax.Match]","[Language.Haskell.TH.Syntax.Pat]","[Language.Haskell.TH.Syntax.Stmt]","Language.Haskell.TH.Syntax.Exp","Language.Haskell.TH.Syntax.Lit","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Range","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.FieldExp",["(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Exp)"]),
-       ("Language.Haskell.TH.Syntax.FieldPat",["(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Pat)"]),
-       ("Language.Haskell.TH.Syntax.Fixity",["GHC.Types.Int","Language.Haskell.TH.Syntax.FixityDirection"]),
-       ("Language.Haskell.TH.Syntax.Foreign",["GHC.Base.String","Language.Haskell.TH.Syntax.Callconv","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Safety","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.FunDep",["[Language.Haskell.TH.Syntax.Name]"]),
-       ("Language.Haskell.TH.Syntax.Guard",["[Language.Haskell.TH.Syntax.Stmt]","Language.Haskell.TH.Syntax.Exp"]),
-       ("Language.Haskell.TH.Syntax.Kind",["Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.Lit",["[GHC.Word.Word8]","GHC.Base.String","GHC.Real.Rational","GHC.Types.Char","GHC.Integer.Type.Integer"]),
-       ("Language.Haskell.TH.Syntax.Match",["[Language.Haskell.TH.Syntax.Dec]","Language.Haskell.TH.Syntax.Body","Language.Haskell.TH.Syntax.Pat"]),
-       ("Language.Haskell.TH.Syntax.ModName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.OccName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.Pat",["[Language.Haskell.TH.Syntax.FieldPat]","[Language.Haskell.TH.Syntax.Pat]","Language.Haskell.TH.Syntax.Exp","Language.Haskell.TH.Syntax.Lit","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Pat","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.Phases",["GHC.Types.Int"]),
-       ("Language.Haskell.TH.Syntax.PkgName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.Pragma",["Data.Maybe.Maybe Language.Haskell.TH.Syntax.Inline","[Language.Haskell.TH.Syntax.RuleBndr]","GHC.Base.String","Language.Haskell.TH.Syntax.AnnTarget","Language.Haskell.TH.Syntax.Exp","Language.Haskell.TH.Syntax.Inline","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Phases","Language.Haskell.TH.Syntax.RuleMatch","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.Pred",["[Language.Haskell.TH.Syntax.Type]","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.Range",["Language.Haskell.TH.Syntax.Exp"]),
-       ("Language.Haskell.TH.Syntax.RuleBndr",["Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.Stmt",["[[Language.Haskell.TH.Syntax.Stmt]]","[Language.Haskell.TH.Syntax.Dec]","Language.Haskell.TH.Syntax.Exp","Language.Haskell.TH.Syntax.Pat"]),
-       ("Language.Haskell.TH.Syntax.StrictType",["(Language.Haskell.TH.Syntax.Strict, Language.Haskell.TH.Syntax.Type)"]),
-       ("Language.Haskell.TH.Syntax.TyLit",["GHC.Base.String","GHC.Integer.Type.Integer"]),
-       ("Language.Haskell.TH.Syntax.TySynEqn",["[Language.Haskell.TH.Syntax.Type]","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.TyVarBndr",["Language.Haskell.TH.Syntax.Kind","Language.Haskell.TH.Syntax.Name"]),
-       ("Language.Haskell.TH.Syntax.Type",["[Language.Haskell.TH.Syntax.TyVarBndr]","GHC.Types.Int","Language.Haskell.TH.Syntax.Cxt","Language.Haskell.TH.Syntax.Kind","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.TyLit","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.VarStrictType",["(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Strict, Language.Haskell.TH.Syntax.Type)"]),
-       ("[(Language.Haskell.TH.Syntax.Guard, Language.Haskell.TH.Syntax.Exp)]",["(Language.Haskell.TH.Syntax.Guard, Language.Haskell.TH.Syntax.Exp)","[]"]),
-       ("[GHC.Word.Word8]",["GHC.Word.Word8","[]"]),
-       ("[Language.Haskell.TH.Syntax.Clause]",["Language.Haskell.TH.Syntax.Clause","[]"]),
-       ("[Language.Haskell.TH.Syntax.Con]",["Language.Haskell.TH.Syntax.Con","[]"]),
-       ("[Language.Haskell.TH.Syntax.Dec]",["Language.Haskell.TH.Syntax.Dec","[]"]),
-       ("[Language.Haskell.TH.Syntax.Exp]",["Language.Haskell.TH.Syntax.Exp","[]"]),
-       ("[Language.Haskell.TH.Syntax.FieldExp]",["Language.Haskell.TH.Syntax.FieldExp","[]"]),
-       ("[Language.Haskell.TH.Syntax.FieldPat]",["Language.Haskell.TH.Syntax.FieldPat","[]"]),
-       ("[Language.Haskell.TH.Syntax.FunDep]",["Language.Haskell.TH.Syntax.FunDep","[]"]),
-       ("[Language.Haskell.TH.Syntax.Match]",["Language.Haskell.TH.Syntax.Match","[]"]),
-       ("[Language.Haskell.TH.Syntax.Name]",["Language.Haskell.TH.Syntax.Name","[]"]),
-       ("[Language.Haskell.TH.Syntax.Pat]",["Language.Haskell.TH.Syntax.Pat","[]"]),
-       ("[Language.Haskell.TH.Syntax.Pred]",["Language.Haskell.TH.Syntax.Pred","[]"]),
-       ("[Language.Haskell.TH.Syntax.Role]",["Language.Haskell.TH.Syntax.Role","[]"]),
-       ("[Language.Haskell.TH.Syntax.RuleBndr]",["Language.Haskell.TH.Syntax.RuleBndr","[]"]),
-       ("[Language.Haskell.TH.Syntax.Stmt]",["Language.Haskell.TH.Syntax.Stmt","[]"]),
-       ("[Language.Haskell.TH.Syntax.StrictType]",["Language.Haskell.TH.Syntax.StrictType","[]"]),
-       ("[Language.Haskell.TH.Syntax.TySynEqn]",["Language.Haskell.TH.Syntax.TySynEqn","[]"]),
-       ("[Language.Haskell.TH.Syntax.TyVarBndr]",["Language.Haskell.TH.Syntax.TyVarBndr","[]"]),
-       ("[Language.Haskell.TH.Syntax.Type]",["Language.Haskell.TH.Syntax.Type","[]"]),
-       ("[Language.Haskell.TH.Syntax.VarStrictType]",["Language.Haskell.TH.Syntax.VarStrictType","[]"]),
-       ("[[Language.Haskell.TH.Syntax.Stmt]]",["[Language.Haskell.TH.Syntax.Stmt]","[]"])]
+      [("(,)",[]),("(,,)",[]),("[]",[]),("(,) Guard",["Guard","(,)"]),("(,) Name",["Name","(,)"]),("(,) Strict",["Strict","(,)"]),("(,,) Name",["Name","(,,)"]),("(,,) Name Strict",["(,,) Name","Strict"]),("(Guard, Exp)",["(,) Guard","Exp"]),("(Name, Exp)",["(,) Name","Exp"]),("(Name, Pat)",["(,) Name","Pat"]),("(Name, Strict, Type)",["(,,) Name Strict","Type"]),("(Strict, Type)",["(,) Strict","Type"]),("AnnTarget",["Name"]),("BigNat",["ByteArray#"]),("Body",["[(Guard, Exp)]","Exp"]),("ByteArray#",[]),("Callconv",[]),("Char",["Char#"]),("Char#",[]),("Clause",["[Dec]","[Pat]","Body"]),("Con",["[StrictType]","[TyVarBndr]","[VarStrictType]","Con","Cxt","Name","StrictType"]),("Cxt",["[Pred]"]),("Dec",["Maybe Kind","[Clause]","[Con]","[Dec]","[FunDep]","[Name]","[Role]","[TySynEqn]","[TyVarBndr]","[Type]","Body","Con","Cxt","FamFlavour","Fixity","Foreign","Name","Pat","Pragma","TySynEqn","Type"]),("Exp",["Maybe Exp","[(Guard, Exp)]","[Dec]","[Exp]","[FieldExp]","[Match]","[Pat]","[Stmt]","Exp","Lit","Name","Range","Type"]),("FamFlavour",[]),("FieldExp",["(Name, Exp)"]),("FieldPat",["(Name, Pat)"]),("Fixity",["Int","FixityDirection"]),("FixityDirection",[]),("Foreign",["String","Callconv","Name","Safety","Type"]),("FunDep",["[Name]"]),("Guard",["[Stmt]","Exp"]),("Inline",[]),("Int",["Int#"]),("Int#",[]),("Integer",["Int#","BigNat"]),("Kind",["Type"]),("Lit",["[Word8]","String","Rational","Char","Integer"]),("Match",["[Dec]","Body","Pat"]),("Maybe",["a"]),("Maybe Exp",["Maybe","Exp"]),("Maybe Inline",["Maybe","Inline"]),("Maybe Kind",["Maybe","Kind"]),("ModName",["String"]),("Name",["NameFlavour","OccName"]),("NameFlavour",["Int","ModName","NameSpace","PkgName"]),("NameSpace",[]),("OccName",["String"]),("Pat",["[FieldPat]","[Pat]","Exp","Lit","Name","Pat","Type"]),("Phases",["Int"]),("PkgName",["String"]),("Pragma",["Maybe Inline","[RuleBndr]","String","Int","AnnTarget","Exp","Inline","Name","Phases","RuleMatch","Type"]),("Pred",["Type"]),("Range",["Exp"]),("Ratio",["a"]),("Ratio Integer",["Ratio","Integer"]),("Rational",["Ratio Integer"]),("Role",[]),("RuleBndr",["Name","Type"]),("RuleMatch",[]),("Safety",[]),("Stmt",["[[Stmt]]","[Dec]","Exp","Pat"]),("Strict",[]),("StrictType",["(Strict, Type)"]),("String",["[Char]"]),("TyLit",["String","Integer"]),("TySynEqn",["[Type]","Type"]),("TyVarBndr",["Kind","Name"]),("Type",["[TyVarBndr]","Int","Cxt","Kind","Name","TyLit","Type"]),("VarStrictType",["(Name, Strict, Type)"]),("Word#",[]),("Word8",["Word#"]),("[(Guard, Exp)]",["(Guard, Exp)","[]"]),("[Char]",["Char","[]"]),("[Clause]",["Clause","[]"]),("[Con]",["Con","[]"]),("[Dec]",["Dec","[]"]),("[Exp]",["Exp","[]"]),("[FieldExp]",["FieldExp","[]"]),("[FieldPat]",["FieldPat","[]"]),("[FunDep]",["FunDep","[]"]),("[Match]",["Match","[]"]),("[Name]",["Name","[]"]),("[Pat]",["Pat","[]"]),("[Pred]",["Pred","[]"]),("[Role]",["Role","[]"]),("[RuleBndr]",["RuleBndr","[]"]),("[Stmt]",["Stmt","[]"]),("[StrictType]",["StrictType","[]"]),("[TySynEqn]",["TySynEqn","[]"]),("[TyVarBndr]",["TyVarBndr","[]"]),("[Type]",["Type","[]"]),("[VarStrictType]",["VarStrictType","[]"]),("[Word8]",["Word8","[]"]),("[[Stmt]]",["[Stmt]","[]"]),("a",[])]
 
 typeEdges :: Set (String, [String])
 typeEdges =
     fromList
-      [("GHC.Base.String",["[GHC.Types.Char]"]),
-       ("GHC.Integer.Type.Integer",["GHC.Prim.ByteArray#","GHC.Prim.Int#"]),
-       ("GHC.Prim.ByteArray#",[]),
-       ("GHC.Prim.Char#",[]),
-       ("GHC.Prim.Int#",[]),
-       ("GHC.Types.Char",["GHC.Prim.Char#"]),
-       ("GHC.Types.Int",["GHC.Prim.Int#"]),
-       ("Language.Haskell.TH.Syntax.Cxt",["[Language.Haskell.TH.Syntax.Pred]"]),
-       ("Language.Haskell.TH.Syntax.Kind",["Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.ModName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.Name",["Language.Haskell.TH.Syntax.NameFlavour","Language.Haskell.TH.Syntax.OccName"]),
-       ("Language.Haskell.TH.Syntax.NameFlavour",["GHC.Prim.Int#","Language.Haskell.TH.Syntax.ModName","Language.Haskell.TH.Syntax.NameSpace","Language.Haskell.TH.Syntax.PkgName"]),
-       ("Language.Haskell.TH.Syntax.NameSpace",[]),
-       ("Language.Haskell.TH.Syntax.OccName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.PkgName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.Pred",["[Language.Haskell.TH.Syntax.Type]","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.TyLit",["GHC.Base.String","GHC.Integer.Type.Integer"]),
-       ("Language.Haskell.TH.Syntax.Type",["[Language.Haskell.TH.Syntax.TyVarBndr]","GHC.Types.Int","Language.Haskell.TH.Syntax.Cxt","Language.Haskell.TH.Syntax.Kind","Language.Haskell.TH.Syntax.Name","Language.Haskell.TH.Syntax.TyLit","Language.Haskell.TH.Syntax.Type"]),
-       ("Language.Haskell.TH.Syntax.TyVarBndr",["Language.Haskell.TH.Syntax.Kind","Language.Haskell.TH.Syntax.Name"]),
-       ("[GHC.Types.Char]",["GHC.Types.Char","[]"]),
-       ("[Language.Haskell.TH.Syntax.Pred]",["Language.Haskell.TH.Syntax.Pred","[]"]),
-       ("[Language.Haskell.TH.Syntax.Type]",["Language.Haskell.TH.Syntax.Type","[]"]),
-       ("[Language.Haskell.TH.Syntax.TyVarBndr]",["Language.Haskell.TH.Syntax.TyVarBndr","[]"]),
-       ("[]",[])]
-      {-[("GHC.Base.String",[]),
-       ("GHC.Integer.Type.Integer",["GHC.Prim.ByteArray#","GHC.Prim.Int#"]),
-       ("GHC.Prim.ByteArray#",[]),
-       ("GHC.Prim.Int#",[]),
-       ("GHC.Types.Int",["GHC.Prim.Int#"]),
-       ("Language.Haskell.TH.Syntax.Cxt",[]),
-       ("Language.Haskell.TH.Syntax.Kind",[]),
-       ("Language.Haskell.TH.Syntax.ModName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.Name",["Language.Haskell.TH.Syntax.NameFlavour","Language.Haskell.TH.Syntax.OccName"]),
-       ("Language.Haskell.TH.Syntax.NameFlavour",["GHC.Prim.Int#","Language.Haskell.TH.Syntax.ModName","Language.Haskell.TH.Syntax.NameSpace","Language.Haskell.TH.Syntax.PkgName"]),
-       ("Language.Haskell.TH.Syntax.NameSpace",[]),
-       ("Language.Haskell.TH.Syntax.OccName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.PkgName",["GHC.Base.String"]),
-       ("Language.Haskell.TH.Syntax.TyLit",["GHC.Base.String","GHC.Integer.Type.Integer"]),
-       ("Language.Haskell.TH.Syntax.TyVarBndr",["Language.Haskell.TH.Syntax.Kind","Language.Haskell.TH.Syntax.Name"]),
-       ("Language.Haskell.TH.Syntax.Type",["[Language.Haskell.TH.Syntax.TyVarBndr]",
-                                           "GHC.Types.Int",
-                                           "Language.Haskell.TH.Syntax.Cxt",
-                                           "Language.Haskell.TH.Syntax.Kind",
-                                           "Language.Haskell.TH.Syntax.Name",
-                                           "Language.Haskell.TH.Syntax.TyLit",
-                                           "Language.Haskell.TH.Syntax.Type"]),
-       ("[Language.Haskell.TH.Syntax.TyVarBndr]",["Language.Haskell.TH.Syntax.TyVarBndr"])]-}
-    
+      [("BigNat",["ByteArray#"]),("ByteArray#",[]),("Char",["Char#"]),("Char#",[]),("Cxt",["[Pred]"]),("Int",["Int#"]),("Int#",[]),("Integer",["Int#","BigNat"]),("Kind",["Type"]),("ModName",["String"]),("Name",["NameFlavour","OccName"]),("NameFlavour",["Int","ModName","NameSpace","PkgName"]),("NameSpace",[]),("OccName",["String"]),("PkgName",["String"]),("Pred",["Type"]),("String",["[Char]"]),("TyLit",["String","Integer"]),("TyVarBndr",["Kind","Name"]),("Type",["[TyVarBndr]","Int","Cxt","Kind","Name","TyLit","Type"]),("[Char]",["Char","[]"]),("[Pred]",["Pred","[]"]),("[TyVarBndr]",["TyVarBndr","[]"]),("[]",[])]
 
-arity0SubtypesOfDec 
-    :: Set String
+arity0SubtypesOfDec :: Set String
 arity0SubtypesOfDec =
-    fromList
-         [ "(Language.Haskell.TH.Syntax.Guard, Language.Haskell.TH.Syntax.Exp)",
-           "(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Exp)",
-           "(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Pat)",
-           "(Language.Haskell.TH.Syntax.Name, Language.Haskell.TH.Syntax.Strict, Language.Haskell.TH.Syntax.Type)",
-           "(Language.Haskell.TH.Syntax.Strict, Language.Haskell.TH.Syntax.Type)",
-           "Data.Maybe.Maybe Language.Haskell.TH.Syntax.Exp",
-           "Data.Maybe.Maybe Language.Haskell.TH.Syntax.Inline",
-           "Data.Maybe.Maybe Language.Haskell.TH.Syntax.Kind",
-           "GHC.Base.String",
-           "GHC.Integer.Type.Integer",
-           "GHC.Prim.ByteArray#",
-           "GHC.Prim.Char#",
-           "GHC.Prim.Int#",
-           "GHC.Prim.Word#",
-           "GHC.Real.Rational",
-           "GHC.Real.Ratio GHC.Integer.Type.Integer",
-           "GHC.Types.Char",
-           "GHC.Types.Int",
-           "GHC.Word.Word8",
-           "Language.Haskell.TH.Syntax.AnnTarget",
-           "Language.Haskell.TH.Syntax.Body",
-           "Language.Haskell.TH.Syntax.Callconv",
-           "Language.Haskell.TH.Syntax.Clause",
-           "Language.Haskell.TH.Syntax.Con",
-           "Language.Haskell.TH.Syntax.Cxt",
-           "Language.Haskell.TH.Syntax.FieldExp",
-           "Language.Haskell.TH.Syntax.FieldPat",
-           "Language.Haskell.TH.Syntax.Kind",
-           "Language.Haskell.TH.Syntax.StrictType",
-           "Language.Haskell.TH.Syntax.VarStrictType",
-           "Language.Haskell.TH.Syntax.Dec",
-           "Language.Haskell.TH.Syntax.Exp",
-           "Language.Haskell.TH.Syntax.FamFlavour",
-           "Language.Haskell.TH.Syntax.Fixity",
-           "Language.Haskell.TH.Syntax.FixityDirection",
-           "Language.Haskell.TH.Syntax.Foreign",
-           "Language.Haskell.TH.Syntax.FunDep",
-           "Language.Haskell.TH.Syntax.Guard",
-           "Language.Haskell.TH.Syntax.Inline",
-           "Language.Haskell.TH.Syntax.Lit",
-           "Language.Haskell.TH.Syntax.Match",
-           "Language.Haskell.TH.Syntax.ModName",
-           "Language.Haskell.TH.Syntax.Name",
-           "Language.Haskell.TH.Syntax.NameFlavour",
-           "Language.Haskell.TH.Syntax.NameSpace",
-           "Language.Haskell.TH.Syntax.OccName",
-           "Language.Haskell.TH.Syntax.Pat",
-           "Language.Haskell.TH.Syntax.Phases",
-           "Language.Haskell.TH.Syntax.PkgName",
-           "Language.Haskell.TH.Syntax.Pragma",
-           "Language.Haskell.TH.Syntax.Pred",
-           "Language.Haskell.TH.Syntax.Range",
-           "Language.Haskell.TH.Syntax.Role",
-           "Language.Haskell.TH.Syntax.RuleBndr",
-           "Language.Haskell.TH.Syntax.RuleMatch",
-           "Language.Haskell.TH.Syntax.Safety",
-           "Language.Haskell.TH.Syntax.Stmt",
-           "Language.Haskell.TH.Syntax.Strict",
-           "Language.Haskell.TH.Syntax.TyLit",
-           "Language.Haskell.TH.Syntax.TySynEqn",
-           "Language.Haskell.TH.Syntax.TyVarBndr",
-           "Language.Haskell.TH.Syntax.Type",
-           "[(Language.Haskell.TH.Syntax.Guard, Language.Haskell.TH.Syntax.Exp)]",
-           "[GHC.Types.Char]",
-           "[GHC.Word.Word8]",
-           "[Language.Haskell.TH.Syntax.Clause]",
-           "[Language.Haskell.TH.Syntax.Con]",
-           "[Language.Haskell.TH.Syntax.Dec]",
-           "[Language.Haskell.TH.Syntax.Exp]",
-           "[Language.Haskell.TH.Syntax.FunDep]",
-           "[Language.Haskell.TH.Syntax.Match]",
-           "[Language.Haskell.TH.Syntax.Name]",
-           "[Language.Haskell.TH.Syntax.Pat]",
-           "[Language.Haskell.TH.Syntax.Pred]",
-           "[Language.Haskell.TH.Syntax.Role]",
-           "[Language.Haskell.TH.Syntax.RuleBndr]",
-           "[Language.Haskell.TH.Syntax.Stmt]",
-           "[Language.Haskell.TH.Syntax.TySynEqn]",
-           "[Language.Haskell.TH.Syntax.TyVarBndr]",
-           "[Language.Haskell.TH.Syntax.Type]",
-           "[[Language.Haskell.TH.Syntax.Stmt]]",
-           "[Language.Haskell.TH.Syntax.FieldExp]",
-           "[Language.Haskell.TH.Syntax.FieldPat]",
-           "[Language.Haskell.TH.Syntax.StrictType]",
-           "[Language.Haskell.TH.Syntax.VarStrictType]"
-         ]
-
+    fromList ["(Guard, Exp)","(Name, Exp)","(Name, Pat)","(Name, Strict, Type)","(Strict, Type)","AnnTarget","BigNat","Body","ByteArray#","Callconv","Char","Char#","Clause","Con","Cxt","Dec","Exp","FamFlavour","FieldExp","FieldPat","Fixity","FixityDirection","Foreign","FunDep","Guard","Inline","Int","Int#","Integer","Kind","Lit","Match","Maybe Exp","Maybe Inline","Maybe Kind","ModName","Name","NameFlavour","NameSpace","OccName","Pat","Phases","PkgName","Pragma","Pred","Range","Ratio Integer","Rational","Role","RuleBndr","RuleMatch","Safety","Stmt","Strict","StrictType","String","TyLit","TySynEqn","TyVarBndr","Type","VarStrictType","Word#","Word8","[(Guard, Exp)]","[Char]","[Clause]","[Con]","[Dec]","[Exp]","[FieldExp]","[FieldPat]","[FunDep]","[Match]","[Name]","[Pat]","[Pred]","[Role]","[RuleBndr]","[Stmt]","[StrictType]","[TySynEqn]","[TyVarBndr]","[Type]","[VarStrictType]","[Word8]","[[Stmt]]"]
 
 subtypesOfDec :: Set String
 subtypesOfDec =
     union
        arity0SubtypesOfDec
-       (fromList
-          ["(,)",
-           "(,) Language.Haskell.TH.Syntax.Guard",
-           "(,) Language.Haskell.TH.Syntax.Name",
-           "(,) Language.Haskell.TH.Syntax.Strict",
-           "(,,)",
-           "(,,) Language.Haskell.TH.Syntax.Name",
-           "(,,) Language.Haskell.TH.Syntax.Name Language.Haskell.TH.Syntax.Strict",
-           "Data.Maybe.Maybe",
-           "GHC.Real.Ratio",
-           "a_0",
-           "[]"])
+       (fromList ["(,)","(,) Guard","(,) Name","(,) Strict","(,,)","(,,) Name","(,,) Name Strict","Maybe","Ratio","[]","a"])
