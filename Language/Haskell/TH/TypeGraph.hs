@@ -10,6 +10,7 @@
 {-# OPTIONS_GHC -Wall #-}
 module Language.Haskell.TH.TypeGraph
     ( VertexStatus(..)
+    , TypeGraphEdges
     , typeGraphEdges
     , typeGraphVertices
     , typeGraph

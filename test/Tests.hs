@@ -24,5 +24,5 @@ import TypeGraph (tests)
 
 main :: IO ()
 main = hspec $ do
-  Context.tests
   TypeGraph.tests
+  Context.tests

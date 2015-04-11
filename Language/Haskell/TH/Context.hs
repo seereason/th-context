@@ -23,6 +23,8 @@ module Language.Haskell.TH.Context
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative ((<$>), (<*>))
 import Data.Monoid (mempty)
+#else
+import Data.Maybe (isJust)
 #endif
 import Control.Monad (filterM)
 import Control.Monad.State (MonadState, StateT, get, modify, evalStateT)
@@ -30,7 +32,6 @@ import Control.Monad.Writer (MonadWriter, tell, WriterT, execWriterT, runWriterT
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert, singleton, elems)
-import Data.Maybe (isJust)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (Expanded, expandPred, expandClassP, runExpanded, markExpanded, E)
 import Language.Haskell.TH.Context.Helpers (pprint')
