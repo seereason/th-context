@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 module Common where
 
 import Data.List as List (map)
@@ -9,10 +8,6 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (E, runExpanded)
 import Language.Haskell.TH.Context.Helpers (pprint')
 import Language.Haskell.TH.TypeGraph (TypeGraphEdges)
-#if __GLASGOW_HASKELL__ < 709
-import Data.List (find, isPrefixOf, sortBy)
-import Data.Function (on)
-#endif
 
 data SetDifferences a = SetDifferences {extra :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
 
