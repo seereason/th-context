@@ -5,7 +5,6 @@ import Data.Map as Map (toList)
 import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context.Expand (E, runExpanded)
 import Language.Haskell.TH.Context.Helpers (pprint')
 import Language.Haskell.TH.TypeGraph (TypeGraphEdges)
 
@@ -36,5 +35,5 @@ pprintType = pprint' . unReify
 pprintPred :: Pred -> String
 pprintPred = pprint' . unReify
 
-edgesToStrings :: TypeGraphEdges (E Type) -> [(String, [String])]
-edgesToStrings mp = List.map (\ (t, ts) -> ((pprintType . runExpanded) t, map (pprintType . runExpanded) (Set.toList ts))) (Map.toList mp)
+edgesToStrings :: TypeGraphEdges Type -> [(String, [String])]
+edgesToStrings mp = List.map (\ (t, ts) -> (pprintType t, map pprintType (Set.toList ts))) (Map.toList mp)

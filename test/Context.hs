@@ -13,7 +13,7 @@ import Data.Map as Map (Map, map, mapKeys, toList, fromList)
 import Data.Set as Set (Set, fromList)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (reifyInstancesWithContext, runContext)
-import Language.Haskell.TH.Context.Expand (E, expandType, runExpanded)
+import Language.Haskell.TH.Context.Expand (expandType)
 import Language.Haskell.TH.Context.Helpers (pprint')
 import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
@@ -34,8 +34,8 @@ tests = do
   -- String becomes [Char], Maybe String becomes Maybe [Char], Maybe (Maybe String) becomes Maybe (Maybe [Char])
   it "expands types as expected" $ do
      (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |], [t|Maybe (Maybe [Char])|] ])
-     let expanded = $(withLocalDeclarations [] (do (types :: [E Type]) <- runQ (sequence [ [t|String|], [t|Maybe String|], [t|Maybe (Maybe String)|] ]) >>= mapM expandType
-                                                   runQ . lift . List.map runExpanded $ types))
+     let expanded = $(withLocalDeclarations [] (do (types :: [Type]) <- runQ (sequence [ [t|String|], [t|Maybe String|], [t|Maybe (Maybe String)|] ]) >>= mapM expandType
+                                                   runQ . lift $ types))
      expanded `shouldBe` expected
 
   -- Test the behavior of th-reify-many
@@ -77,7 +77,7 @@ tests = do
   it "can match all the Enum instances" $ do
      (\ (insts, _pairs) -> (setDifferences (Set.fromList insts) enumInstances))
              $(do (insts, mp) <- runContext (reifyInstancesWithContext ''Enum [VarT (mkName "a")])
-                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys (pprintPred . runExpanded) mp))))
+                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys pprintPred mp))))
           `shouldBe` noDifferences
 -}
   it "can handle multi param class IArray" $ do
@@ -87,7 +87,7 @@ tests = do
              $(do -- Run instances and save the result and the state monad result
                   (insts, mp) <- runContext (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")])
                   -- Convert to lists of text so we can lift out of Q
-                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys (pprintPred . runExpanded) mp))))
+                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys pprintPred mp))))
           `shouldBe` (noDifferences,
                       -- I don't think this is right
                       Map.fromList [{-("Data.Array.Base.IArray Data.Array.Base.UArray a", arrayInstances)-}] :: Map String (Set String))
