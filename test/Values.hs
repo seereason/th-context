@@ -99,8 +99,7 @@ bitsInstances
 #endif
         "instance Bits Bool","instance Bits Int","instance Bits Integer","instance Bits Word","instance Bits Word16","instance Bits Word32","instance Bits Word64","instance Bits Word8",
         -- These come and go depending on the version of something.
-        "instance Bits Int16","instance Bits Int32","instance Bits Int64","instance Bits Int8","instance Bits Natural"
-]
+        "instance Bits Int16","instance Bits Int32","instance Bits Int64","instance Bits Int8","instance Bits Natural" ]
 
 enumInstances :: Set String
 enumInstances =
