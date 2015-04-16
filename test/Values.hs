@@ -97,7 +97,10 @@ bitsInstances
 #if MIN_VERSION_template_haskell(2,10,0)
         "instance Bits CChar","instance Bits CInt","instance Bits CIntMax","instance Bits CIntPtr","instance Bits CLLong","instance Bits CLong","instance Bits CPtrdiff","instance Bits CSChar","instance Bits CShort","instance Bits CSigAtomic","instance Bits CSize","instance Bits CUChar","instance Bits CUInt","instance Bits CUIntMax","instance Bits CUIntPtr","instance Bits CULLong","instance Bits CULong","instance Bits CUShort","instance Bits CWchar",
 #endif
-        "instance Bits Bool","instance Bits Int","instance Bits Integer","instance Bits Word","instance Bits Word16","instance Bits Word32","instance Bits Word64","instance Bits Word8"]
+        "instance Bits Bool","instance Bits Int","instance Bits Integer","instance Bits Word","instance Bits Word16","instance Bits Word32","instance Bits Word64","instance Bits Word8",
+        -- These come and go depending on the version of something.
+        "instance Bits Int16","instance Bits Int32","instance Bits Int64","instance Bits Int8","instance Bits Natural"
+]
 
 enumInstances :: Set String
 enumInstances =
