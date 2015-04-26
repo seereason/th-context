@@ -28,8 +28,8 @@ import Prelude hiding (pred)
 -- | This class lets us use the same expand* functions to work with
 -- specially marked expanded types or with the original types.
 class Expanded un ex | ex -> un where
-    markExpanded :: un -> ex -- | Unsafely mark a value as expanded
-    runExpanded :: ex -> un -- | Strip mark off an expanded value
+    markExpanded :: un -> ex -- ^ Unsafely mark a value as expanded
+    runExpanded :: ex -> un -- ^ Strip mark off an expanded value
 
 -- | Apply the th-desugar expand function to a 'Type' and mark it as expanded.
 expandType :: (DsMonad m, Expanded Type e)  => Type -> m e
