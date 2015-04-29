@@ -6,7 +6,7 @@ import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Helpers (pprint')
-import Language.Haskell.TH.TypeGraph (TypeGraphEdges)
+import Language.Haskell.TH.Context.TypeGraph (TypeGraphEdges)
 
 data SetDifferences a = SetDifferences {extra :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
 

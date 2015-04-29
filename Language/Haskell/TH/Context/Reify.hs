@@ -9,7 +9,7 @@
 {-# LANGUAGE CPP, DeriveDataTypeable, FlexibleContexts, MultiParamTypeClasses, ScopedTypeVariables, StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
-module Language.Haskell.TH.Context
+module Language.Haskell.TH.Context.Reify
     ( InstMap
     , reifyInstancesWithContext
     , tellInstance

@@ -8,7 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
-module Language.Haskell.TH.TypeGraph
+module Language.Haskell.TH.Context.TypeGraph
     ( VertexStatus(..)
     , TypeGraphEdges
     , typeGraphEdges
