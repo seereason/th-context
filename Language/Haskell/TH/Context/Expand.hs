@@ -1,15 +1,28 @@
 -- | The 'Expanded' class helps keep track of which 'Type' values have
 -- been fully expanded to a canonical form.  This lets us use the 'Eq'
 -- and 'Ord' relationships on 'Type' and 'Pred' values when reasoning
--- about instance context.
+-- about instance context.  What the 'expandType' function does is use
+-- the function from @th-desugar@ to replace occurrences of @ConT name@
+-- with the associated 'Type' if @name@ is a declared type synonym
+-- @TySynD name _ typ@.  For convenience, a wrapper type 'E' is
+-- provided, along with the 'Expanded' instances @E Type@ and @E
+-- Pred@.  Now the 'expandType' and 'expandPred' functions can be used
+-- to return values of type @E Type@ and @E Pred@ respectively.
+--
+-- Instances @Expanded Type Type@ and @Expanded Pred Pred@ are
+-- provided in "Language.Haskell.TH.Context.Unsafe", for when less
+-- type safety is required.
+
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Language.Haskell.TH.Context.Expand
     ( Expanded(markExpanded, runExpanded)
+    , runExpanded'
     , expandType
     , expandPred
     , expandClassP
@@ -39,10 +52,10 @@ expandType typ = markExpanded <$> DS.typeToTH <$> (DS.dsType typ >>= DS.expand)
 -- Note that the definition of 'Pred' changed in template-haskell-2.10.0.0.
 expandPred :: (DsMonad m, Expanded Pred e)  => Pred -> m e
 #if MIN_VERSION_template_haskell(2,10,0)
-expandPred pred = markExpanded <$> expandType pred
+expandPred = expandType
 #else
-expandPred (ClassP className typeParameters) = markExpanded <$> ClassP className <$> mapM expandType typeParameters
-expandPred (EqualP type1 type2) = markExpanded <$> (EqualP <$> expandType type1 <*> expandType type2)
+expandPred (ClassP className typeParameters) = markExpanded <$> (ClassP className . map runExpanded') <$> mapM expandType typeParameters
+expandPred (EqualP type1 type2) = markExpanded <$> (EqualP <$> (runExpanded' <$> expandType type1) <*> (runExpanded' <$> expandType type2))
 #endif
 
 -- | Expand a list of 'Type' and build an expanded 'ClassP' 'Pred'.
@@ -52,25 +65,20 @@ expandClassP className typeParameters =
 #if MIN_VERSION_template_haskell(2,10,0)
       (expandType $ foldl AppT (ConT className) typeParameters) :: m e
 #else
-      ClassP className <$> mapM expandType typeParameters
+      (ClassP className . map runExpanded') <$> mapM expandType typeParameters
 #endif
+
+runExpanded' :: Expanded a (E a) => E a -> a
+runExpanded' = runExpanded
 
 -- | A concrete type for which Expanded instances are declared below.
 newtype E a = E a deriving (Eq, Ord, Show)
-
-instance Expanded Type Type where
-    markExpanded = id
-    runExpanded = id
 
 instance Expanded Type (E Type) where
     markExpanded = E
     runExpanded (E x) = x
 
 #if !MIN_VERSION_template_haskell(2,10,0)
-instance Expanded Pred Pred where
-    markExpanded = id
-    runExpanded = id
-
 instance Expanded Pred (E Pred) where
     markExpanded = E
     runExpanded (E x) = x

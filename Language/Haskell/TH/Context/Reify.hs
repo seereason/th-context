@@ -33,7 +33,7 @@ import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert, singleton, elems)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context.Expand (expandPred, expandClassP)
+import Language.Haskell.TH.Context.Expand (E, expandPred, expandClassP, runExpanded')
 import Language.Haskell.TH.Context.Helpers (pprint')
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
@@ -50,10 +50,10 @@ type InstMap pred = Map pred [InstanceDec]
 -- monad 'InstMap', associated with an empty list of predicates, and the
 -- empty list is returned.  Later the caller can use 'tellInstance' to
 -- associate instances with the predicate.
-reifyInstancesWithContext :: (DsMonad m, MonadState (InstMap Pred) m) =>
+reifyInstancesWithContext :: forall m. (DsMonad m, MonadState (InstMap (E Pred)) m) =>
                              Name -> [Type] -> m [InstanceDec]
 reifyInstancesWithContext className typeParameters = do
-       p <- expandClassP className typeParameters
+       p <- expandClassP className typeParameters :: m (E Pred)
        mp <- get
        case Map.lookup p mp of
          Just x -> return x
@@ -73,12 +73,12 @@ reifyInstancesWithContext className typeParameters = do
 -- context we have computed so far.  We have already added a ClassP predicate
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
-testInstance :: (DsMonad m, MonadState (InstMap Pred) m) => Name -> [Type] -> InstanceDec -> m Bool
+testInstance :: (DsMonad m, MonadState (InstMap (E Pred)) m) => Name -> [Type] -> InstanceDec -> m Bool
 testInstance className typeParameters (InstanceD instanceContext instanceType _) = do
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
   -- instance context field.
-  mapM expandPred (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext
+  mapM expandPred (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext . map runExpanded'
     where
       instancePredicates :: [Type] -> Type -> [Pred]
 #if MIN_VERSION_template_haskell(2,10,0)
@@ -98,13 +98,13 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- parameters with the instance type.  Are they consistent?  Find out
 -- using type synonym expansion, variable substitution, elimination of
 -- vacuous predicates, and unification.
-testContext :: (DsMonad m, MonadState (InstMap Pred) m) => [Pred] -> m Bool
+testContext :: (DsMonad m, MonadState (InstMap (E Pred)) m) => [Pred] -> m Bool
 testContext context =
     and <$> (mapM consistent =<< simplifyContext context)
 
 -- | Perform type expansion on the predicates, then simplify using
 -- variable substitution and eliminate vacuous equivalences.
-simplifyContext :: (DsMonad m, MonadState (InstMap Pred) m) => [Pred] -> m [Pred]
+simplifyContext :: (DsMonad m, MonadState (InstMap (E Pred)) m) => [Pred] -> m [Pred]
 simplifyContext context =
     do let context' = concat $ map unify context
        let context'' = foldl simplifyPredicate context' context'
@@ -128,7 +128,7 @@ simplifyPredicate context _ = context
 -- monad and the additional instances that have accumulated in the
 -- State monad.
 #if 0
-testContextWithState :: forall m pred. (DsMonad m, MonadState (InstMap Pred) m) => [Pred] -> m Bool
+testContextWithState :: forall m pred. (DsMonad m, MonadState (InstMap (E Pred)) m) => [Pred] -> m Bool
 testContextWithState context = do
   -- Is the instance already in the Q monad?
   flag <- testContext context
@@ -162,7 +162,7 @@ unify x = [x]
 -- | Decide whether a predicate is consistent with the accumulated
 -- context.  Use recursive calls to qReifyInstancesWithContext when
 -- we encounter a class name applied to a list of type parameters.
-consistent :: (DsMonad m, MonadState (InstMap Pred) m) => Pred -> m Bool
+consistent :: (DsMonad m, MonadState (InstMap (E Pred)) m) => Pred -> m Bool
 #if MIN_VERSION_template_haskell(2,10,0)
 consistent typ
     | isJust (unfoldInstance typ) =
@@ -193,7 +193,7 @@ consistent (ClassP className typeParameters) =
 -- parameters) will be considered part of the context for subsequent
 -- calls to qReifyInstancesWithContext.  The instance will be returned
 -- when the writer monad exists so it can be spliced into to program.
-tellInstance :: (DsMonad m, MonadWriter (InstMap Pred) m, MonadState (InstMap Pred) m, Quasi m) =>
+tellInstance :: (DsMonad m, MonadWriter (InstMap (E Pred)) m, MonadState (InstMap (E Pred)) m, Quasi m) =>
                 Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
@@ -215,16 +215,16 @@ unfoldInstance (ConT name) = Just (name, [])
 unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
 unfoldInstance _ = Nothing
 
-evalContextState :: Monad m => StateT (InstMap Pred) m r -> m r
-evalContextState action = evalStateT action (mempty :: (InstMap Pred))
+evalContextState :: Monad m => StateT (InstMap (E Pred)) m r -> m r
+evalContextState action = evalStateT action (mempty :: (InstMap (E Pred)))
 
-execContextWriter :: Monad m => WriterT (InstMap Pred) m () -> m (InstMap Pred)
+execContextWriter :: Monad m => WriterT (InstMap (E Pred)) m () -> m (InstMap (E Pred))
 execContextWriter = execWriterT
 
 -- | Typical use: run both state and writer monads to generate a list of
 -- instance declarations.
-execContext :: (Monad m, Functor m) => StateT (InstMap Pred) (WriterT (InstMap Pred) m) () -> m [Dec]
+execContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) () -> m [Dec]
 execContext action = (concat . Map.elems) <$> (execWriterT $ evalContextState action)
 
-runContext :: (Monad m, Functor m) => StateT (InstMap Pred) (WriterT (InstMap Pred) m) r -> m (r, (InstMap Pred))
+runContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) r -> m (r, (InstMap (E Pred)))
 runContext action = runWriterT $ evalContextState action
