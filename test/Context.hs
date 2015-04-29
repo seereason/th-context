@@ -87,7 +87,7 @@ tests = do
              $(do -- Run instances and save the result and the state monad result
                   (insts, mp) <- runContext (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")])
                   -- Convert to lists of text so we can lift out of Q
-                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys (pprintPred . runExpanded') mp))))
+                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys pprintPred mp))))
           `shouldBe` (noDifferences,
                       -- I don't think this is right
                       Map.fromList [{-("Data.Array.Base.IArray Data.Array.Base.UArray a", arrayInstances)-}] :: Map String (Set String))
