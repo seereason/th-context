@@ -8,9 +8,8 @@ import Control.Monad (filterM)
 import Data.Set as Set (fromList, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
-import Language.Haskell.TH.Context.Expand (expandType, runExpanded)
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, VertexStatus(Vertex))
+import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeGraphNode, VertexStatus(Vertex))
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
@@ -22,43 +21,41 @@ import Values
 
 tests :: SpecM () ()
 tests = do
-  it "can find the subtypes of Type" $ do
+  it "records a type synonym" $ do
+     $([t|String|] >>= \ string -> typeGraphNode Nothing [] string >>= lift) `shouldBe` (TypeGraphNode Nothing [''String] (AppT ListT (ConT ''Char)))
+
+  it "can find the subtypesOfType" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
-                                  runQ [t|Type|] >>=
-                                  expandType >>= \typ ->
+                                  runQ [t|Type|] >>= \typ ->
                                   typeGraphVertices (const $ return Vertex) [typ] >>=
-                                  runQ . lift . map pprintType . Set.toList)) subtypesOfType
+                                  runQ . lift . map pprintNode . Set.toList)) subtypesOfType
         `shouldBe` noDifferences
 
-  it "can find the edges of the subtype graph of Type" $ do
+  it "can find the edges of the subtype graph of Type (typeEdges)" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
-                                runQ [t|Type|] >>=
-                                expandType >>= \typ ->
+                                runQ [t|Type|] >>= \typ ->
                                 typeGraphEdges (const $ return Vertex) [typ] >>=
                                 runQ . lift . edgesToStrings)) typeEdges
         `shouldBe` noDifferences
 
-  it "can find the edges of the subtype graph of Dec" $ do
+  it "can find the edges of the subtype graph of Dec (decEdges)" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
-                                runQ [t|Dec|] >>=
-                                expandType >>= \typ ->
+                                runQ [t|Dec|] >>= \typ ->
                                 typeGraphEdges (const $ return Vertex) [typ] >>=
                                 runQ . lift . edgesToStrings)) decEdges
         `shouldBe` noDifferences
 
-  it "can find the subtypes of Dec" $ do
+  it "can find the subtypesOfDec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
-                                runQ [t|Dec|] >>=
-                                expandType >>= \typ ->
+                                runQ [t|Dec|] >>= \typ ->
                                 typeGraphVertices (const $ return Vertex) [typ] >>=
-                                runQ . lift . map pprintType . Set.toList)) subtypesOfDec
+                                runQ . lift . map pprintNode . Set.toList)) subtypesOfDec
         `shouldBe` noDifferences
 
-  it "can find the arity 0 subtypes of Dec" $ do
+  it "can find the arity0SubtypesOfDec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
-                                runQ [t|Dec|] >>=
-                                expandType >>= \typ ->
+                                runQ [t|Dec|] >>= \typ ->
                                 typeGraphVertices (const $ return Vertex) [typ] >>=
-                                filterM (\ t -> typeArity (runExpanded t) >>= \ a -> return (a == 0)) . Set.toList >>=
-                                runQ . lift . map pprintType)) arity0SubtypesOfDec
+                                filterM (\ t -> typeArity (_etype t) >>= \ a -> return (a == 0)) . Set.toList >>=
+                                runQ . lift . map pprintNode)) arity0SubtypesOfDec
         `shouldBe` noDifferences

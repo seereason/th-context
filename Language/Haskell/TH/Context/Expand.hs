@@ -61,11 +61,10 @@ expandPred (EqualP type1 type2) = markExpanded <$> (EqualP <$> (runExpanded' <$>
 -- | Expand a list of 'Type' and build an expanded 'ClassP' 'Pred'.
 expandClassP :: forall m e. (DsMonad m, Expanded Pred e)  => Name -> [Type] -> m e
 expandClassP className typeParameters =
-    markExpanded <$>
 #if MIN_VERSION_template_haskell(2,10,0)
       (expandType $ foldl AppT (ConT className) typeParameters) :: m e
 #else
-      (ClassP className . map runExpanded') <$> mapM expandType typeParameters
+      (markExpanded . ClassP className . map runExpanded') <$> mapM expandType typeParameters
 #endif
 
 runExpanded' :: Expanded a (E a) => E a -> a

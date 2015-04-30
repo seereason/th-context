@@ -1,14 +1,16 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, TemplateHaskell #-}
 module Common where
 
-import Data.List as List (map)
+import Data.List as List (intercalate, map)
 import Data.Map as Map (toList)
+import Data.Monoid ((<>))
 import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (E, runExpanded)
 import Language.Haskell.TH.Context.Helpers (pprint')
-import Language.Haskell.TH.Context.TypeGraph (TypeGraphEdges)
+import Language.Haskell.TH.Context.TypeGraph (TypeGraphNode(..), TypeGraphEdges)
+import Language.Haskell.TH.Syntax (Lift(lift))
 
 data SetDifferences a = SetDifferences {unexpected :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
 
@@ -34,8 +36,22 @@ pprintDec = pprint' . unReify
 pprintType :: E Type -> String
 pprintType = pprint' . unReify . runExpanded
 
+pprintNode :: TypeGraphNode -> String
+pprintNode (TypeGraphNode {_field = fld, _alias = ns, _etype = typ}) =
+    maybe "" printField fld ++
+    pprint' (unReify typ) ++
+    if null ns then "" else (" (aka " ++ intercalate ", " (map (show . unReifyName) ns) ++ ")")
+
+printField :: (Name, Name, Either Int Name) -> String
+printField (tname, cname, field) =
+    show (unReifyName tname) ++ "." ++ either (\ n -> show (unReifyName cname) ++ "[" ++ show n ++ "]") (\ f -> show (unReifyName f)) field ++ "::"
+
 pprintPred :: E Pred -> String
 pprintPred = pprint' . unReify . runExpanded
 
-edgesToStrings :: TypeGraphEdges (E Type) -> [(String, [String])]
-edgesToStrings mp = List.map (\ (t, ts) -> (pprintType t, map pprintType (Set.toList ts))) (Map.toList mp)
+edgesToStrings :: TypeGraphEdges -> [(String, [String])]
+edgesToStrings mp = List.map (\ (t, ts) -> (pprintNode t, map pprintNode (Set.toList ts))) (Map.toList mp)
+
+instance Lift TypeGraphNode where
+    lift (TypeGraphNode {_field = f, _alias = ns, _etype = t}) =
+        [|TypeGraphNode {_field = $(lift f), _alias = $(lift ns), _etype = $(lift t)}|]
