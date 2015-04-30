@@ -67,8 +67,8 @@ typeNode typ =
 
 -- | Build a TypeGraphNode for a field of a record.  This calls
 -- 'typeNode' and then sets the _field value.
-fieldNode :: forall m. DsMonad m => (Name, Name, Either Int Name) -> Type -> m TypeGraphNode
-fieldNode field typ = typeNode typ >>= \node -> return $ node {_field = Just field}
+fieldNode :: forall m. DsMonad m => Type -> (Name, Name, Either Int Name) -> m TypeGraphNode
+fieldNode typ field = typeNode typ >>= \node -> return $ node {_field = Just field}
 
 type TypeGraphEdges = Map TypeGraphNode (Set TypeGraphNode)
 
@@ -164,7 +164,7 @@ typeGraphEdges augment types = do
                 doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
 
                 doField :: Name -> Dec -> Name -> (Either Int Name, Type) -> StateT TypeGraphEdges m ()
-                doField tname _dec cname (field, ftype) = fieldNode (tname, cname, field) ftype >>= \node' -> addEdge node' >> doNode node'
+                doField tname _dec cname (field, ftype) = fieldNode ftype (tname, cname, field) >>= \node' -> addEdge node' >> doNode node'
 
           doEdges _ = return ({-trace ("Unrecognized type: " ++ pprint' typ)-} ())
 
