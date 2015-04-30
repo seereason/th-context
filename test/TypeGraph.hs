@@ -9,7 +9,7 @@ import Data.Set as Set (fromList, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeGraphNode, VertexStatus(Vertex))
+import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeNode, VertexStatus(Vertex))
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
@@ -22,7 +22,7 @@ import Values
 tests :: SpecM () ()
 tests = do
   it "records a type synonym" $ do
-     $([t|String|] >>= \ string -> typeGraphNode Nothing [] string >>= lift) `shouldBe` (TypeGraphNode Nothing [''String] (AppT ListT (ConT ''Char)))
+     $([t|String|] >>= \ string -> typeNode string >>= lift) `shouldBe` (TypeGraphNode Nothing [''String] (AppT ListT (ConT ''Char)))
 
   it "can find the subtypesOfType" $ do
      setDifferences (fromList $(withLocalDeclarations [] $

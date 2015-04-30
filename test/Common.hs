@@ -37,7 +37,7 @@ pprintType :: E Type -> String
 pprintType = pprint' . unReify . runExpanded
 
 pprintNode :: TypeGraphNode -> String
-pprintNode (TypeGraphNode {_field = fld, _alias = ns, _etype = typ}) =
+pprintNode (TypeGraphNode {_field = fld, _synonyms = ns, _etype = typ}) =
     maybe "" printField fld ++
     pprint' (unReify typ) ++
     if null ns then "" else (" (aka " ++ intercalate ", " (map (show . unReifyName) ns) ++ ")")
@@ -53,5 +53,5 @@ edgesToStrings :: TypeGraphEdges -> [(String, [String])]
 edgesToStrings mp = List.map (\ (t, ts) -> (pprintNode t, map pprintNode (Set.toList ts))) (Map.toList mp)
 
 instance Lift TypeGraphNode where
-    lift (TypeGraphNode {_field = f, _alias = ns, _etype = t}) =
-        [|TypeGraphNode {_field = $(lift f), _alias = $(lift ns), _etype = $(lift t)}|]
+    lift (TypeGraphNode {_field = f, _synonyms = ns, _etype = t}) =
+        [|TypeGraphNode {_field = $(lift f), _synonyms = $(lift ns), _etype = $(lift t)}|]
