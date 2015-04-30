@@ -17,6 +17,8 @@ module Language.Haskell.TH.Context.TypeGraph
     , typeGraphEdges
     , typeGraphVertices
     , typeGraph
+    , expandNode
+    , expandEdges
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
@@ -27,8 +29,9 @@ import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Control.Monad.Trans (lift)
 import Data.Default (Default(def))
 import Data.Graph (Graph, Vertex, graphFromEdges)
-import Data.Map as Map (Map, keys, lookup, toList, update, alter)
-import Data.Set as Set (insert, Set, empty, fromList, toList)
+import Data.List as List (map)
+import Data.Map as Map (Map, keys, lookup, map, mapKeys, toList, update, alter)
+import Data.Set as Set (insert, Set, empty, fromList, map, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context.Expand (E, expandType, runExpanded)
@@ -156,8 +159,8 @@ typeGraphEdges augment types = do
 
                 doCon :: Name -> Dec -> Con -> StateT TypeGraphEdges m ()
                 doCon tname dec (ForallC _ _ con) = doCon tname dec con
-                doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (map Left ([1..] :: [Int])) (map snd fields))
-                doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (map (\ (fname, _, typ') -> (Right fname, typ')) fields)
+                doCon tname dec (NormalC cname fields) = mapM_ (doField tname dec cname) (zip (List.map Left ([1..] :: [Int])) (List.map snd fields))
+                doCon tname dec (RecC cname fields) = mapM_ (doField tname dec cname) (List.map (\ (fname, _, typ') -> (Right fname, typ')) fields)
                 doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
 
                 doField :: Name -> Dec -> Name -> (Either Int Name, Type) -> StateT TypeGraphEdges m ()
@@ -175,4 +178,13 @@ typeGraph augment types = do
   typeGraphEdges augment types >>= return . graphFromEdges . triples
     where
       triples :: Map TypeGraphNode (Set TypeGraphNode) -> [(TypeGraphNode, TypeGraphNode, [TypeGraphNode])]
-      triples mp = map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
+      triples mp = List.map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
+
+-- | Simplify a graph by throwing away the field and type synonym
+-- information in each node.  This means the nodes only contain the
+-- fully expanded Type value.
+expandEdges :: TypeGraphEdges -> TypeGraphEdges
+expandEdges = Map.mapKeys expandNode . Map.map (Set.map expandNode)
+
+expandNode :: TypeGraphNode -> TypeGraphNode
+expandNode node = node {_synonyms = [], _field = Nothing}

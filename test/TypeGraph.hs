@@ -4,12 +4,12 @@
 module TypeGraph where
 
 import Control.Monad (filterM)
---import Data.Map as Map (toList)
-import Data.Set as Set (fromList, toList)
+import Data.List as List (map)
+import Data.Set as Set (fromList, map, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeNode, VertexStatus(Vertex))
+import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeNode, VertexStatus(Vertex), expandNode)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
@@ -28,7 +28,7 @@ tests = do
      setDifferences (fromList $(withLocalDeclarations [] $
                                   runQ [t|Type|] >>= \typ ->
                                   typeGraphVertices (const $ return Vertex) [typ] >>=
-                                  runQ . lift . map pprintNode . Set.toList)) subtypesOfType
+                                  runQ . lift . List.map pprintNode . Set.toList)) subtypesOfType
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Type (typeEdges)" $ do
@@ -49,7 +49,7 @@ tests = do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>= \typ ->
                                 typeGraphVertices (const $ return Vertex) [typ] >>=
-                                runQ . lift . map pprintNode . Set.toList)) subtypesOfDec
+                                runQ . lift . List.map pprintNode . Set.toList)) subtypesOfDec
         `shouldBe` noDifferences
 
   it "can find the arity0SubtypesOfDec" $ do
@@ -57,5 +57,13 @@ tests = do
                                 runQ [t|Dec|] >>= \typ ->
                                 typeGraphVertices (const $ return Vertex) [typ] >>=
                                 filterM (\ t -> typeArity (_etype t) >>= \ a -> return (a == 0)) . Set.toList >>=
-                                runQ . lift . map pprintNode)) arity0SubtypesOfDec
+                                runQ . lift . List.map pprintNode)) arity0SubtypesOfDec
         `shouldBe` noDifferences
+
+  it "can find the subtypesOfDec" $ do
+     setDifferences (fromList $(withLocalDeclarations [] $
+                                runQ [t|Dec|] >>= \typ ->
+                                typeGraphVertices (const $ return Vertex) [typ] >>=
+                                runQ . lift . List.map pprintNode . Set.toList . Set.map expandNode)) expandedSubtypesOfDec
+        `shouldBe` noDifferences
+
