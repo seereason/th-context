@@ -60,7 +60,7 @@ tests = do
                                 runQ . lift . List.map pprintNode)) arity0SubtypesOfDec
         `shouldBe` noDifferences
 
-  it "can find the subtypesOfDec" $ do
+  it "can find the expandedSubtypesOfDec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>= \typ ->
                                 typeGraphVertices (const $ return Vertex) [typ] >>=

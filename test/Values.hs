@@ -1281,7 +1281,14 @@ subtypesOfDec =
 
 expandedSubtypesOfDec :: Set String
 expandedSubtypesOfDec =
-    fromList ["(,)",
+    fromList [
+#if MIN_VERSION_template_haskell(2,10,0)
+              "BigNat",
+#else
+              "Pred",
+              "[Pred]",
+#endif
+              "(,)",
               "(,) Guard",
               "(,) Name",
               "(,) Strict",
@@ -1328,7 +1335,6 @@ expandedSubtypesOfDec =
               "Phases",
               "PkgName",
               "Pragma",
-              "Pred",
               "Range",
               "Ratio",
               "Ratio Integer",
@@ -1358,7 +1364,6 @@ expandedSubtypesOfDec =
               "[Match]",
               "[Name]",
               "[Pat]",
-              "[Pred]",
               "[Role]",
               "[RuleBndr]",
               "[Stmt]",
