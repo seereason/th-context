@@ -31,7 +31,7 @@ import Data.Default (Default(def))
 import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.List as List (map)
 import Data.Map as Map (Map, keys, lookup, map, mapKeys, toList, update, alter)
-import Data.Set as Set (insert, Set, empty, fromList, map, toList)
+import Data.Set as Set (insert, Set, empty, fromList, map, member, toList)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context.Expand (E, expandType, runExpanded)
@@ -80,7 +80,7 @@ data VertexStatus
     | Sink        -- ^ out degree zero - don't create any outgoing edges
     | Divert Type -- ^ replace all outgoing edges with an edge to an alternate type
     | Extra Type  -- ^ add an extra outgoing edge to the given type
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 instance Default VertexStatus where
     def = Vertex
@@ -110,21 +110,22 @@ typeGraphEdges
     -> [Type]
     -> m TypeGraphEdges
 typeGraphEdges augment types = do
-  execStateT (mapM_ (\ typ -> typeNode typ >>= doNode) types) mempty
+  execStateT (mapM_ (\ typ -> typeNode typ >>= doNode Set.empty) types) mempty
     where
-      doNode :: TypeGraphNode -> StateT TypeGraphEdges m ()
-      doNode node = do
+      doNode :: Set (TypeGraphNode, VertexStatus) -> TypeGraphNode -> StateT TypeGraphEdges m ()
+      doNode used node = do
         (mp :: TypeGraphEdges) <- get
         status <- lift (augment node)
         case Map.lookup node mp of
           Just _ -> return ()
           Nothing ->
             case status of
+              _ | Set.member (node, status) used -> addNode >> doEdges node
+              Vertex -> addNode >> doEdges node
               NoVertex -> return ()
               Sink -> addNode
-              (Divert typ') -> typeNode typ' >>= \node' -> addNode >> addEdge node' >> doNode node'
-              (Extra typ') -> typeNode typ' >>= \node' -> addNode >> doEdges node >> addEdge node' >> doNode node'
-              Vertex -> addNode >> doEdges node
+              hint@(Divert typ') -> typeNode typ' >>= \node' -> addNode >> addEdge node' >> doNode (Set.insert (node, hint) used) node'
+              (Extra typ') -> typeNode typ' >>= \node' -> addNode >> doEdges node >> addEdge node' >> doNode (Set.insert (node, status) used) node'
         where
           addNode :: StateT TypeGraphEdges m ()
           -- addNode a = expandType a >>= \ a' -> modify $ Map.insertWith (flip const) a' Set.empty
@@ -143,8 +144,8 @@ typeGraphEdges augment types = do
             enode <- typeNode element
             addEdge cnode
             addEdge enode
-            doNode cnode
-            doNode enode
+            doNode used cnode
+            doNode used enode
           doEdges (TypeGraphNode {_etype = (ConT name)}) = do
             info <- qReify name
             case info of
@@ -154,7 +155,7 @@ typeGraphEdges augment types = do
                 doDec :: Dec -> StateT TypeGraphEdges m ()
                 doDec dec@(NewtypeD _ tname _ con _) = doCon tname dec con
                 doDec dec@(DataD _ tname _ cons _) = mapM_ (doCon tname dec) cons
-                doDec (TySynD _tname _tvars typ') = trace "unexpected synonym" (return ()) >> typeNode typ' >>= \node' -> doNode node'
+                doDec (TySynD _tname _tvars typ') = trace "unexpected synonym" (return ()) >> typeNode typ' >>= \node' -> doNode used node'
                 doDec _ = return ()
 
                 doCon :: Name -> Dec -> Con -> StateT TypeGraphEdges m ()
@@ -164,7 +165,7 @@ typeGraphEdges augment types = do
                 doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
 
                 doField :: Name -> Dec -> Name -> (Either Int Name, Type) -> StateT TypeGraphEdges m ()
-                doField tname _dec cname (field, ftype) = fieldNode ftype (tname, cname, field) >>= \node' -> addEdge node' >> doNode node'
+                doField tname _dec cname (field, ftype) = fieldNode ftype (tname, cname, field) >>= \node' -> addEdge node' >> doNode used node'
 
           doEdges _ = return ({-trace ("Unrecognized type: " ++ pprint' typ)-} ())
 
