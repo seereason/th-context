@@ -17,8 +17,8 @@ module Language.Haskell.TH.Context.TypeGraph
     , typeGraphEdges
     , typeGraphVertices
     , typeGraph
-    , expandNode
-    , expandEdges
+    , simpleNode
+    , simpleEdges
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
@@ -183,8 +183,8 @@ typeGraph augment types = do
 -- | Simplify a graph by throwing away the field and type synonym
 -- information in each node.  This means the nodes only contain the
 -- fully expanded Type value.
-expandEdges :: TypeGraphEdges -> TypeGraphEdges
-expandEdges = Map.mapKeys expandNode . Map.map (Set.map expandNode)
+simpleEdges :: TypeGraphEdges -> TypeGraphEdges
+simpleEdges = Map.mapKeys simpleNode . Map.map (Set.map simpleNode)
 
-expandNode :: TypeGraphNode -> TypeGraphNode
-expandNode node = node {_synonyms = [], _field = Nothing}
+simpleNode :: TypeGraphNode -> TypeGraphNode
+simpleNode node = node {_synonyms = [], _field = Nothing}

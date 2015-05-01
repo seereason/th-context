@@ -1279,8 +1279,8 @@ subtypesOfDec =
                   "Ratio.:%[2]::a",
                   "[]"])
 
-expandedSubtypesOfDec :: Set String
-expandedSubtypesOfDec =
+simpleSubtypesOfDec :: Set String
+simpleSubtypesOfDec =
     fromList [
 #if MIN_VERSION_template_haskell(2,10,0)
               "BigNat",
