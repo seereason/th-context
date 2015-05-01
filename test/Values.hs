@@ -3,13 +3,14 @@
 module Values where
 
 import Control.Monad (filterM)
-import Data.Map as Map (toList)
+import Data.Map as Map (Map, fromList, toList)
+import Data.Ratio (Ratio)
 import Data.Set as Set (Set, fromList, toList, union)
 import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
-import Language.Haskell.TH.Context.Expand (expandType)
+import Language.Haskell.TH.Context.Expand (E, expandType, markExpanded)
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, VertexStatus(Vertex))
+import Language.Haskell.TH.Context.TypeGraph (TypeGraphNode(..), typeGraphVertices, typeGraphEdges, VertexStatus(Vertex))
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
@@ -20,7 +21,7 @@ import Common
 
 subtypesOfType :: Set String
 subtypesOfType =
-    fromList
+    Set.fromList
     [
 #if MIN_VERSION_template_haskell(2,10,0)
       "BigNat.BN#[1]::ByteArray#",
@@ -79,7 +80,7 @@ subtypesOfType =
 
 decEdges :: Set (String, [String])
 decEdges =
-    fromList
+    Set.fromList
       [
 #if MIN_VERSION_template_haskell(2,10,0)
        ("(,)",[]),
@@ -637,7 +638,7 @@ decEdges =
 
 typeEdges :: Set (String, [String])
 typeEdges =
-    fromList
+    Set.fromList
       [
 #if MIN_VERSION_template_haskell(2,10,0)
        ("BigNat.BN#[1]::ByteArray#",[]),
@@ -730,7 +731,7 @@ typeEdges =
 
 arity0SubtypesOfDec :: Set String
 arity0SubtypesOfDec =
-    fromList
+    Set.fromList
       [
 #if MIN_VERSION_template_haskell(2,10,0)
        "(Guard, Exp)",
@@ -1265,7 +1266,8 @@ subtypesOfDec :: Set String
 subtypesOfDec =
     union
        arity0SubtypesOfDec
-       (fromList ["(,)",
+       (Set.fromList [
+                  "(,)",
                   "(,) Guard",
                   "(,) Name",
                   "(,) Strict",
@@ -1281,7 +1283,7 @@ subtypesOfDec =
 
 simpleSubtypesOfDec :: Set String
 simpleSubtypesOfDec =
-    fromList [
+    Set.fromList [
 #if MIN_VERSION_template_haskell(2,10,0)
               "BigNat",
 #else
@@ -1398,3 +1400,11 @@ enumInstances =
 arrayInstances :: Set String
 arrayInstances =
     Set.fromList ["instance IArray UArray (FunPtr a)","instance IArray UArray (Ptr a)","instance IArray UArray (StablePtr a)","instance IArray UArray Bool","instance IArray UArray Char","instance IArray UArray Double","instance IArray UArray Float","instance IArray UArray Int","instance IArray UArray Int16","instance IArray UArray Int32","instance IArray UArray Int64","instance IArray UArray Int8","instance IArray UArray Word","instance IArray UArray Word16","instance IArray UArray Word32","instance IArray UArray Word64","instance IArray UArray Word8"]
+
+decTypeSynonyms :: Map (E Type) (Set Name)
+decTypeSynonyms =
+    Map.fromList [(markExpanded (AppT (AppT (TupleT 2) (ConT ''Strict)) (ConT ''Type)), Set.fromList [''StrictType]),
+                  (markExpanded (AppT (ConT ''Ratio) (ConT ''Integer)),                 Set.fromList [''Rational]),
+                  (markExpanded (AppT ListT (ConT ''Char)),                             Set.fromList [''String]),
+                  (markExpanded (AppT ListT (ConT ''Pred)),                             Set.fromList [''Cxt]),
+                  (markExpanded (ConT ''Type),                                          Set.fromList [''Kind])]

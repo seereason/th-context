@@ -1,13 +1,13 @@
-{-# LANGUAGE FlexibleContexts, TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, TemplateHaskell #-}
 module Common where
 
 import Data.List as List (intercalate, map)
-import Data.Map as Map (toList)
+import Data.Map as Map (Map, fromList, toList)
 import Data.Monoid ((<>))
-import Data.Set as Set (Set, difference, empty, toList)
+import Data.Set as Set (Set, difference, empty, fromList, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context.Expand (E, runExpanded)
+import Language.Haskell.TH.Context.Expand (E, markExpanded, runExpanded)
 import Language.Haskell.TH.Context.Helpers (pprint')
 import Language.Haskell.TH.Context.TypeGraph (TypeGraphNode(..), TypeGraphEdges)
 import Language.Haskell.TH.Syntax (Lift(lift))
@@ -55,3 +55,12 @@ edgesToStrings mp = List.map (\ (t, ts) -> (pprintNode t, map pprintNode (Set.to
 instance Lift TypeGraphNode where
     lift (TypeGraphNode {_field = f, _synonyms = ns, _etype = t}) =
         [|TypeGraphNode {_field = $(lift f), _synonyms = $(lift ns), _etype = $(lift t)}|]
+
+instance Lift a => Lift (Set a) where
+    lift s = [|Set.fromList $(lift (Set.toList s))|]
+
+instance (Lift a, Lift b) => Lift (Map a b) where
+    lift mp = [|Map.fromList $(lift (Map.toList mp))|]
+
+instance Lift (E Type) where
+    lift etype = [|markExpanded $(lift (runExpanded etype))|]

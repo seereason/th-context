@@ -19,6 +19,8 @@ module Language.Haskell.TH.Context.TypeGraph
     , typeGraph
     , simpleNode
     , simpleEdges
+    , typeSynonymMap
+    , typeSynonymMapSimple
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
@@ -30,11 +32,11 @@ import Control.Monad.Trans (lift)
 import Data.Default (Default(def))
 import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.List as List (map)
-import Data.Map as Map (Map, keys, lookup, map, mapKeys, toList, update, alter)
-import Data.Set as Set (insert, Set, empty, fromList, map, member, toList)
+import Data.Map as Map (Map, filter, fromList, fromListWith, keys, lookup, map, mapKeys, toList, update, alter)
+import Data.Set as Set (empty, fromList, insert, map, member, null, Set, toList, union)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
-import Language.Haskell.TH.Context.Expand (E, expandType, runExpanded)
+import Language.Haskell.TH.Context.Expand (E, expandType, markExpanded, runExpanded)
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax (Quasi(..))
@@ -189,3 +191,18 @@ simpleEdges = Map.mapKeys simpleNode . Map.map (Set.map simpleNode)
 
 simpleNode :: TypeGraphNode -> TypeGraphNode
 simpleNode node = node {_synonyms = [], _field = Nothing}
+
+-- | Find all the reachable type synonyms and return then in a Map.
+typeSynonymMap :: forall m. DsMonad m => (TypeGraphNode -> m VertexStatus) -> [Type] -> m (Map TypeGraphNode (Set Name))
+typeSynonymMap augment types =
+     (Map.filter (not . Set.null) .
+      Map.fromList .
+      List.map (\node -> (node, Set.fromList (_synonyms node))) .
+      Map.keys) <$> typeGraphEdges augment types
+
+typeSynonymMapSimple :: forall m. DsMonad m => (TypeGraphNode -> m VertexStatus) -> [Type] -> m (Map (E Type) (Set Name))
+typeSynonymMapSimple augment types =
+    simplify <$> typeSynonymMap augment types
+    where
+      simplify :: Map TypeGraphNode (Set Name) -> Map (E Type) (Set Name)
+      simplify mp = Map.fromListWith Set.union (List.map (\ (k, a) -> (markExpanded (_etype k), a)) (Map.toList mp))
