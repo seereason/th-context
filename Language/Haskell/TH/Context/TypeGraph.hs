@@ -30,8 +30,9 @@ import Data.Monoid (mempty)
 import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Control.Monad.Trans (lift)
 import Data.Default (Default(def))
+import Data.Generics (Data, everywhere, mkT)
 import Data.Graph (Graph, Vertex, graphFromEdges)
-import Data.List as List (map)
+import Data.List as List (concatMap, intersperse, map)
 import Data.Map as Map (Map, filter, fromList, fromListWith, keys, lookup, map, mapKeys, toList, update, alter)
 import Data.Set as Set (empty, fromList, insert, map, member, null, Set, toList, union)
 import Language.Haskell.Exts.Syntax ()
@@ -39,6 +40,7 @@ import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context.Expand (E, expandType, markExpanded, runExpanded)
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Instances ()
+import Language.Haskell.TH.PprLib (hcat, ptext)
 import Language.Haskell.TH.Syntax (Quasi(..))
 
 import Debug.Trace
@@ -50,6 +52,29 @@ data TypeGraphNode
       , _synonyms :: [Name] -- ^ The series of type synonyms we expanded to arrive at this type
       , _etype :: Type -- ^ The fully expanded type
       } deriving (Eq, Ord, Show)
+
+instance Ppr TypeGraphNode where
+    ppr (TypeGraphNode {_field = fld, _synonyms = ns, _etype = typ}) =
+        hcat (ppr (unReify typ) :
+              case (fld, ns) of
+                 (Nothing, []) -> []
+                 _ ->   [ptext " ("] ++
+                        intersperse (ptext ", ")
+                          (List.concatMap (\ n -> [ptext ("aka " ++ show (unReifyName n))]) ns ++
+                           maybe [] (\ f -> [ptext (printField f)]) fld) ++
+                        [ptext ")"])
+        where
+          printField :: (Name, Name, Either Int Name) -> String
+          printField (tname, cname, field) =
+              "field " ++
+              show (unReifyName tname) ++ "." ++
+              either (\ n -> show (unReifyName cname) ++ "[" ++ show n ++ "]") (\ f -> show (unReifyName f)) field
+
+          unReify :: Data a => a -> a
+          unReify = everywhere (mkT unReifyName)
+
+          unReifyName :: Name -> Name
+          unReifyName = mkName . nameBase
 
 -- | Build a TypeGraphNode from an unexpanded type.  This records the
 -- type synonyms we expand to reach the "real" type.
