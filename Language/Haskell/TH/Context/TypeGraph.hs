@@ -49,18 +49,18 @@ import Debug.Trace
 data TypeGraphVertex
     = TypeGraphVertex
       { _field :: Maybe (Name, Name, Either Int Name) -- ^ The record filed which contains this type
-      , _synonyms :: [Name] -- ^ The series of type synonyms we expanded to arrive at this type
+      , _syns :: Set Name -- ^ All the type synonyms that expand to this type
       , _etype :: Type -- ^ The fully expanded type
       } deriving (Eq, Ord, Show)
 
 instance Ppr TypeGraphVertex where
-    ppr (TypeGraphVertex {_field = fld, _synonyms = ns, _etype = typ}) =
+    ppr (TypeGraphVertex {_field = fld, _syns = ns, _etype = typ}) =
         hcat (ppr (unReify typ) :
-              case (fld, ns) of
+              case (fld, Set.toList ns) of
                  (Nothing, []) -> []
                  _ ->   [ptext " ("] ++
                         intersperse (ptext ", ")
-                          (List.concatMap (\ n -> [ptext ("aka " ++ show (unReifyName n))]) ns ++
+                          (List.concatMap (\ n -> [ptext ("aka " ++ show (unReifyName n))]) (Set.toList ns) ++
                            maybe [] (\ f -> [ptext (printField f)]) fld) ++
                         [ptext ")"])
         where
@@ -85,11 +85,11 @@ typeVertex typ =
       _ -> doType typ
     where
       -- What happens to ForallT types here?
-      doType typ' = expandType typ' >>= \(etype :: E Type) -> return $ TypeGraphVertex {_field = Nothing, _synonyms = [], _etype = runExpanded etype}
+      doType typ' = expandType typ' >>= \(etype :: E Type) -> return $ TypeGraphVertex {_field = Nothing, _syns = Set.empty, _etype = runExpanded etype}
       doName name = runQ (reify name) >>= doInfo name
       doInfo name (TyConI dec) = doDec name dec
       doInfo name _ = doType (ConT name)
-      doDec _ (TySynD name _ typ') = doType typ' >>= \node -> return $ node {_synonyms = name : _synonyms node}
+      doDec _ (TySynD name _ typ') = doType typ' >>= \node -> return $ node {_syns = Set.insert name (_syns node)}
       doDec name _dec = doType (ConT name)
 
 -- | Build a TypeGraphVertex for a field of a record.  This calls
@@ -215,14 +215,14 @@ simpleEdges :: TypeGraphEdges -> TypeGraphEdges
 simpleEdges = Map.mapKeys simpleVertex . Map.map (Set.map simpleVertex)
 
 simpleVertex :: TypeGraphVertex -> TypeGraphVertex
-simpleVertex node = node {_synonyms = [], _field = Nothing}
+simpleVertex node = node {_syns = Set.empty, _field = Nothing}
 
 -- | Find all the reachable type synonyms and return then in a Map.
 typeSynonymMap :: forall m. DsMonad m => (TypeGraphVertex -> m VertexHint) -> [Type] -> m (Map TypeGraphVertex (Set Name))
 typeSynonymMap augment types =
      (Map.filter (not . Set.null) .
       Map.fromList .
-      List.map (\node -> (node, Set.fromList (_synonyms node))) .
+      List.map (\node -> (node, _syns node)) .
       Map.keys) <$> typeGraphEdges augment types
 
 typeSynonymMapSimple :: forall m. DsMonad m => (TypeGraphVertex -> m VertexHint) -> [Type] -> m (Map (E Type) (Set Name))

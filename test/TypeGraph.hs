@@ -5,7 +5,7 @@ module TypeGraph where
 
 import Control.Monad (filterM)
 import Data.List as List (map)
-import Data.Set as Set (fromList, map, toList)
+import Data.Set as Set (fromList, map, singleton, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Helpers (typeArity)
@@ -22,7 +22,7 @@ import Values
 tests :: SpecM () ()
 tests = do
   it "records a type synonym" $ do
-     $([t|String|] >>= \ string -> typeVertex string >>= lift) `shouldBe` (TypeGraphVertex Nothing [''String] (AppT ListT (ConT ''Char)))
+     $([t|String|] >>= \ string -> typeVertex string >>= lift) `shouldBe` (TypeGraphVertex Nothing (singleton ''String) (AppT ListT (ConT ''Char)))
 
   it "can find the subtypesOfType" $ do
      setDifferences (fromList $(withLocalDeclarations [] $

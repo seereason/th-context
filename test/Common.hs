@@ -4,7 +4,7 @@ module Common where
 import Data.List as List (intercalate, map)
 import Data.Map as Map (Map, fromList, toList)
 import Data.Monoid ((<>))
-import Data.Set as Set (Set, difference, empty, fromList, toList)
+import Data.Set as Set (Set, difference, empty, fromList, null, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (E, markExpanded, runExpanded)
@@ -37,10 +37,10 @@ pprintType :: E Type -> String
 pprintType = pprint' . unReify . runExpanded
 
 pprintVertex :: TypeGraphVertex -> String
-pprintVertex (TypeGraphVertex {_field = fld, _synonyms = ns, _etype = typ}) =
+pprintVertex (TypeGraphVertex {_field = fld, _syns = ns, _etype = typ}) =
     maybe "" printField fld ++
     pprint' (unReify typ) ++
-    if null ns then "" else (" (aka " ++ intercalate ", " (map (show . unReifyName) ns) ++ ")")
+    if Set.null ns then "" else (" (aka " ++ intercalate ", " (map (show . unReifyName) (Set.toList ns)) ++ ")")
 
 printField :: (Name, Name, Either Int Name) -> String
 printField (tname, cname, field) =
@@ -53,8 +53,8 @@ edgesToStrings :: TypeGraphEdges -> [(String, [String])]
 edgesToStrings mp = List.map (\ (t, ts) -> (pprintVertex t, map pprintVertex (Set.toList ts))) (Map.toList mp)
 
 instance Lift TypeGraphVertex where
-    lift (TypeGraphVertex {_field = f, _synonyms = ns, _etype = t}) =
-        [|TypeGraphVertex {_field = $(lift f), _synonyms = $(lift ns), _etype = $(lift t)}|]
+    lift (TypeGraphVertex {_field = f, _syns = ns, _etype = t}) =
+        [|TypeGraphVertex {_field = $(lift f), _syns = $(lift ns), _etype = $(lift t)}|]
 
 instance Lift a => Lift (Set a) where
     lift s = [|Set.fromList $(lift (Set.toList s))|]
