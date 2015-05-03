@@ -10,7 +10,7 @@ import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (E, expandType, markExpanded)
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (TypeGraphNode(..), typeGraphVertices, typeGraphEdges, VertexStatus(Vertex))
+import Language.Haskell.TH.Context.TypeGraph (TypeGraphNode(..), typeGraphVertices, typeGraphEdges, VertexHint(Vertex))
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax

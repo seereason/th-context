@@ -9,7 +9,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 module Language.Haskell.TH.Context.TypeGraph
-    ( VertexStatus(..)
+    ( VertexHint(..)
     , TypeGraphNode(..)
     , typeNode
     , fieldNode
@@ -99,9 +99,9 @@ fieldNode typ field = typeNode typ >>= \node -> return $ node {_field = Just fie
 
 type TypeGraphEdges = Map TypeGraphNode (Set TypeGraphNode)
 
--- | When a VertexStatus value is associated with a Type it describes
+-- | When a VertexHint value is associated with a Type it describes
 -- alterations in the type graph from the usual default.
-data VertexStatus
+data VertexHint
     = Vertex      -- ^ normal case
     | NoVertex    -- ^ exclude this type from the graph
     | Sink        -- ^ out degree zero - don't create any outgoing edges
@@ -109,14 +109,14 @@ data VertexStatus
     | Extra Type  -- ^ add an extra outgoing edge to the given type
     deriving (Eq, Ord, Show)
 
-instance Default VertexStatus where
+instance Default VertexHint where
     def = Vertex
 
 -- | Return the set of types embedded in the given type.  This is just
 -- the nodes of the type graph.  The type synonymes are expanded by the
 -- th-desugar package to make them suitable for use as map keys.
 typeGraphVertices :: forall m. DsMonad m =>
-                     (TypeGraphNode -> m VertexStatus)
+                     (TypeGraphNode -> m VertexHint)
                   -> [Type]
                   -> m (Set TypeGraphNode)
 typeGraphVertices augment types =
@@ -124,7 +124,7 @@ typeGraphVertices augment types =
 
 typeGraphEdges
     :: forall m. DsMonad m =>
-       (TypeGraphNode -> m VertexStatus)
+       (TypeGraphNode -> m VertexHint)
            -- ^ This function is used to obtain hints about the graph
            -- structure around a given node.  If it returns NoVertex,
            -- no vertices or edges are added to the graph.  If it
@@ -139,7 +139,7 @@ typeGraphEdges
 typeGraphEdges augment types = do
   execStateT (mapM_ (\ typ -> typeNode typ >>= doNode Set.empty) types) mempty
     where
-      doNode :: Set (TypeGraphNode, VertexStatus) -> TypeGraphNode -> StateT TypeGraphEdges m ()
+      doNode :: Set (TypeGraphNode, VertexHint) -> TypeGraphNode -> StateT TypeGraphEdges m ()
       doNode used node = do
         (mp :: TypeGraphEdges) <- get
         status <- lift (augment node)
@@ -201,7 +201,7 @@ typeGraphEdges augment types = do
 -- represents a primitive lens, and each path in the graph is a
 -- composition of lenses.
 typeGraph :: forall m node key. (DsMonad m, node ~ TypeGraphNode, key ~ TypeGraphNode) =>
-                (TypeGraphNode -> m VertexStatus) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
+                (TypeGraphNode -> m VertexHint) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
 typeGraph augment types = do
   typeGraphEdges augment types >>= return . graphFromEdges . triples
     where
@@ -218,14 +218,14 @@ simpleNode :: TypeGraphNode -> TypeGraphNode
 simpleNode node = node {_synonyms = [], _field = Nothing}
 
 -- | Find all the reachable type synonyms and return then in a Map.
-typeSynonymMap :: forall m. DsMonad m => (TypeGraphNode -> m VertexStatus) -> [Type] -> m (Map TypeGraphNode (Set Name))
+typeSynonymMap :: forall m. DsMonad m => (TypeGraphNode -> m VertexHint) -> [Type] -> m (Map TypeGraphNode (Set Name))
 typeSynonymMap augment types =
      (Map.filter (not . Set.null) .
       Map.fromList .
       List.map (\node -> (node, Set.fromList (_synonyms node))) .
       Map.keys) <$> typeGraphEdges augment types
 
-typeSynonymMapSimple :: forall m. DsMonad m => (TypeGraphNode -> m VertexStatus) -> [Type] -> m (Map (E Type) (Set Name))
+typeSynonymMapSimple :: forall m. DsMonad m => (TypeGraphNode -> m VertexHint) -> [Type] -> m (Map (E Type) (Set Name))
 typeSynonymMapSimple augment types =
     simplify <$> typeSynonymMap augment types
     where

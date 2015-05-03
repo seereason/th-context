@@ -9,4 +9,4 @@ module Language.Haskell.TH.Context
 
 import Language.Haskell.TH.Context.Expand (Expanded(markExpanded, runExpanded), expandType, expandPred, expandClassP, E)
 import Language.Haskell.TH.Context.Reify (InstMap, reifyInstancesWithContext, execContext, runContext)
-import Language.Haskell.TH.Context.TypeGraph (VertexStatus(..), TypeGraphEdges, typeGraphEdges, typeGraphVertices, typeGraph)
+import Language.Haskell.TH.Context.TypeGraph (VertexHint(..), TypeGraphEdges, typeGraphEdges, typeGraphVertices, typeGraph)

@@ -9,7 +9,7 @@ import Data.Set as Set (fromList, map, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeNode, VertexStatus(Vertex), simpleNode, typeSynonymMapSimple)
+import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeNode, VertexHint(Vertex), simpleNode, typeSynonymMapSimple)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
