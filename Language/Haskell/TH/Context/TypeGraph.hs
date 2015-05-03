@@ -10,14 +10,14 @@
 {-# OPTIONS_GHC -Wall #-}
 module Language.Haskell.TH.Context.TypeGraph
     ( VertexHint(..)
-    , TypeGraphNode(..)
-    , typeNode
-    , fieldNode
+    , TypeGraphVertex(..)
+    , typeVertex
+    , fieldVertex
     , TypeGraphEdges
     , typeGraphEdges
     , typeGraphVertices
     , typeGraph
-    , simpleNode
+    , simpleVertex
     , simpleEdges
     , typeSynonymMap
     , typeSynonymMapSimple
@@ -46,15 +46,15 @@ import Language.Haskell.TH.Syntax (Quasi(..))
 import Debug.Trace
 
 -- | For simple type graphs always set _field and _synonyms to Nothing.
-data TypeGraphNode
-    = TypeGraphNode
+data TypeGraphVertex
+    = TypeGraphVertex
       { _field :: Maybe (Name, Name, Either Int Name) -- ^ The record filed which contains this type
       , _synonyms :: [Name] -- ^ The series of type synonyms we expanded to arrive at this type
       , _etype :: Type -- ^ The fully expanded type
       } deriving (Eq, Ord, Show)
 
-instance Ppr TypeGraphNode where
-    ppr (TypeGraphNode {_field = fld, _synonyms = ns, _etype = typ}) =
+instance Ppr TypeGraphVertex where
+    ppr (TypeGraphVertex {_field = fld, _synonyms = ns, _etype = typ}) =
         hcat (ppr (unReify typ) :
               case (fld, ns) of
                  (Nothing, []) -> []
@@ -76,55 +76,55 @@ instance Ppr TypeGraphNode where
           unReifyName :: Name -> Name
           unReifyName = mkName . nameBase
 
--- | Build a TypeGraphNode from an unexpanded type.  This records the
+-- | Build a TypeGraphVertex from an unexpanded type.  This records the
 -- type synonyms we expand to reach the "real" type.
-typeNode :: DsMonad m => Type -> m TypeGraphNode
-typeNode typ =
+typeVertex :: DsMonad m => Type -> m TypeGraphVertex
+typeVertex typ =
     case typ of
       (ConT name) -> doName name -- special case to catch top level type synonyms.  Others are removed by expandType below.
       _ -> doType typ
     where
       -- What happens to ForallT types here?
-      doType typ' = expandType typ' >>= \(etype :: E Type) -> return $ TypeGraphNode {_field = Nothing, _synonyms = [], _etype = runExpanded etype}
+      doType typ' = expandType typ' >>= \(etype :: E Type) -> return $ TypeGraphVertex {_field = Nothing, _synonyms = [], _etype = runExpanded etype}
       doName name = runQ (reify name) >>= doInfo name
       doInfo name (TyConI dec) = doDec name dec
       doInfo name _ = doType (ConT name)
       doDec _ (TySynD name _ typ') = doType typ' >>= \node -> return $ node {_synonyms = name : _synonyms node}
       doDec name _dec = doType (ConT name)
 
--- | Build a TypeGraphNode for a field of a record.  This calls
--- 'typeNode' and then sets the _field value.
-fieldNode :: forall m. DsMonad m => Type -> (Name, Name, Either Int Name) -> m TypeGraphNode
-fieldNode typ field = typeNode typ >>= \node -> return $ node {_field = Just field}
+-- | Build a TypeGraphVertex for a field of a record.  This calls
+-- 'typeVertex' and then sets the _field value.
+fieldVertex :: forall m. DsMonad m => Type -> (Name, Name, Either Int Name) -> m TypeGraphVertex
+fieldVertex typ field = typeVertex typ >>= \node -> return $ node {_field = Just field}
 
-type TypeGraphEdges = Map TypeGraphNode (Set TypeGraphNode)
+type TypeGraphEdges = Map TypeGraphVertex (Set TypeGraphVertex)
 
 -- | When a VertexHint value is associated with a Type it describes
 -- alterations in the type graph from the usual default.
 data VertexHint
-    = Vertex      -- ^ normal case
-    | NoVertex    -- ^ exclude this type from the graph
-    | Sink        -- ^ out degree zero - don't create any outgoing edges
-    | Divert Type -- ^ replace all outgoing edges with an edge to an alternate type
-    | Extra Type  -- ^ add an extra outgoing edge to the given type
+    = Normal      -- ^ normal case
+    | Hidden      -- ^ don't create this vertex, no in or out edges
+    | Sink        -- ^ out degree zero - don't create any out edges
+    | Divert Type -- ^ replace all out edges with an edge to an alternate type
+    | Extra Type  -- ^ add an extra out edge to the given type
     deriving (Eq, Ord, Show)
 
 instance Default VertexHint where
-    def = Vertex
+    def = Normal
 
 -- | Return the set of types embedded in the given type.  This is just
 -- the nodes of the type graph.  The type synonymes are expanded by the
 -- th-desugar package to make them suitable for use as map keys.
 typeGraphVertices :: forall m. DsMonad m =>
-                     (TypeGraphNode -> m VertexHint)
+                     (TypeGraphVertex -> m VertexHint)
                   -> [Type]
-                  -> m (Set TypeGraphNode)
+                  -> m (Set TypeGraphVertex)
 typeGraphVertices augment types =
     (Set.fromList . Map.keys) <$> (typeGraphEdges augment types :: m TypeGraphEdges)
 
 typeGraphEdges
     :: forall m. DsMonad m =>
-       (TypeGraphNode -> m VertexHint)
+       (TypeGraphVertex -> m VertexHint)
            -- ^ This function is used to obtain hints about the graph
            -- structure around a given node.  If it returns NoVertex,
            -- no vertices or edges are added to the graph.  If it
@@ -137,43 +137,43 @@ typeGraphEdges
     -> [Type]
     -> m TypeGraphEdges
 typeGraphEdges augment types = do
-  execStateT (mapM_ (\ typ -> typeNode typ >>= doNode Set.empty) types) mempty
+  execStateT (mapM_ (\ typ -> typeVertex typ >>= doVertex Set.empty) types) mempty
     where
-      doNode :: Set (TypeGraphNode, VertexHint) -> TypeGraphNode -> StateT TypeGraphEdges m ()
-      doNode used node = do
+      doVertex :: Set (TypeGraphVertex, VertexHint) -> TypeGraphVertex -> StateT TypeGraphEdges m ()
+      doVertex used node = do
         (mp :: TypeGraphEdges) <- get
         status <- lift (augment node)
         case Map.lookup node mp of
           Just _ -> return ()
           Nothing ->
             case status of
-              _ | Set.member (node, status) used -> addNode >> doEdges node
-              Vertex -> addNode >> doEdges node
-              NoVertex -> return ()
-              Sink -> addNode
-              hint@(Divert typ') -> typeNode typ' >>= \node' -> addNode >> addEdge node' >> doNode (Set.insert (node, hint) used) node'
-              (Extra typ') -> typeNode typ' >>= \node' -> addNode >> doEdges node >> addEdge node' >> doNode (Set.insert (node, status) used) node'
+              _ | Set.member (node, status) used -> addVertex >> doEdges node
+              Normal -> addVertex >> doEdges node
+              Hidden -> return ()
+              Sink -> addVertex
+              hint@(Divert typ') -> typeVertex typ' >>= \node' -> addVertex >> addEdge node' >> doVertex (Set.insert (node, hint) used) node'
+              (Extra typ') -> typeVertex typ' >>= \node' -> addVertex >> doEdges node >> addEdge node' >> doVertex (Set.insert (node, status) used) node'
         where
-          addNode :: StateT TypeGraphEdges m ()
-          -- addNode a = expandType a >>= \ a' -> modify $ Map.insertWith (flip const) a' Set.empty
-          addNode = modify $ Map.alter (maybe (Just Set.empty) Just) node
-          addEdge :: TypeGraphNode -> StateT TypeGraphEdges m ()
+          addVertex :: StateT TypeGraphEdges m ()
+          -- addVertex a = expandType a >>= \ a' -> modify $ Map.insertWith (flip const) a' Set.empty
+          addVertex = modify $ Map.alter (maybe (Just Set.empty) Just) node
+          addEdge :: TypeGraphVertex -> StateT TypeGraphEdges m ()
           addEdge node' = modify $ Map.update (Just . Set.insert node') node
 
           -- Find and add the out edges from a node.
-          doEdges :: TypeGraphNode -> StateT TypeGraphEdges m ()
+          doEdges :: TypeGraphVertex -> StateT TypeGraphEdges m ()
           -- Do we treat this as a distinct type?
-          doEdges (TypeGraphNode {_etype = (ForallT _ _ typ')}) =
-              -- typeGraphNode (_field node) (_synonyms node) typ' >>= \node' -> addEdge node' >> doNode node'
+          doEdges (TypeGraphVertex {_etype = (ForallT _ _ typ')}) =
+              -- typeGraphVertex (_field node) (_synonyms node) typ' >>= \node' -> addEdge node' >> doVertex node'
               doEdges (node {_etype = typ'})
-          doEdges (TypeGraphNode {_etype = (AppT container element)}) = do
-            cnode <- typeNode container
-            enode <- typeNode element
+          doEdges (TypeGraphVertex {_etype = (AppT container element)}) = do
+            cnode <- typeVertex container
+            enode <- typeVertex element
             addEdge cnode
             addEdge enode
-            doNode used cnode
-            doNode used enode
-          doEdges (TypeGraphNode {_etype = (ConT name)}) = do
+            doVertex used cnode
+            doVertex used enode
+          doEdges (TypeGraphVertex {_etype = (ConT name)}) = do
             info <- qReify name
             case info of
               TyConI dec -> doDec dec
@@ -182,7 +182,7 @@ typeGraphEdges augment types = do
                 doDec :: Dec -> StateT TypeGraphEdges m ()
                 doDec dec@(NewtypeD _ tname _ con _) = doCon tname dec con
                 doDec dec@(DataD _ tname _ cons _) = mapM_ (doCon tname dec) cons
-                doDec (TySynD _tname _tvars typ') = trace "unexpected synonym" (return ()) >> typeNode typ' >>= \node' -> doNode used node'
+                doDec (TySynD _tname _tvars typ') = trace "unexpected synonym" (return ()) >> typeVertex typ' >>= \node' -> doVertex used node'
                 doDec _ = return ()
 
                 doCon :: Name -> Dec -> Con -> StateT TypeGraphEdges m ()
@@ -192,7 +192,7 @@ typeGraphEdges augment types = do
                 doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
 
                 doField :: Name -> Dec -> Name -> (Either Int Name, Type) -> StateT TypeGraphEdges m ()
-                doField tname _dec cname (field, ftype) = fieldNode ftype (tname, cname, field) >>= \node' -> addEdge node' >> doNode used node'
+                doField tname _dec cname (field, ftype) = fieldVertex ftype (tname, cname, field) >>= \node' -> addEdge node' >> doVertex used node'
 
           doEdges _ = return ({-trace ("Unrecognized type: " ++ pprint' typ)-} ())
 
@@ -200,34 +200,34 @@ typeGraphEdges augment types = do
 -- from a type to one of the types it contains.  Thus, each edge
 -- represents a primitive lens, and each path in the graph is a
 -- composition of lenses.
-typeGraph :: forall m node key. (DsMonad m, node ~ TypeGraphNode, key ~ TypeGraphNode) =>
-                (TypeGraphNode -> m VertexHint) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
+typeGraph :: forall m node key. (DsMonad m, node ~ TypeGraphVertex, key ~ TypeGraphVertex) =>
+                (TypeGraphVertex -> m VertexHint) -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
 typeGraph augment types = do
   typeGraphEdges augment types >>= return . graphFromEdges . triples
     where
-      triples :: Map TypeGraphNode (Set TypeGraphNode) -> [(TypeGraphNode, TypeGraphNode, [TypeGraphNode])]
+      triples :: Map TypeGraphVertex (Set TypeGraphVertex) -> [(TypeGraphVertex, TypeGraphVertex, [TypeGraphVertex])]
       triples mp = List.map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
 
 -- | Simplify a graph by throwing away the field and type synonym
 -- information in each node.  This means the nodes only contain the
 -- fully expanded Type value.
 simpleEdges :: TypeGraphEdges -> TypeGraphEdges
-simpleEdges = Map.mapKeys simpleNode . Map.map (Set.map simpleNode)
+simpleEdges = Map.mapKeys simpleVertex . Map.map (Set.map simpleVertex)
 
-simpleNode :: TypeGraphNode -> TypeGraphNode
-simpleNode node = node {_synonyms = [], _field = Nothing}
+simpleVertex :: TypeGraphVertex -> TypeGraphVertex
+simpleVertex node = node {_synonyms = [], _field = Nothing}
 
 -- | Find all the reachable type synonyms and return then in a Map.
-typeSynonymMap :: forall m. DsMonad m => (TypeGraphNode -> m VertexHint) -> [Type] -> m (Map TypeGraphNode (Set Name))
+typeSynonymMap :: forall m. DsMonad m => (TypeGraphVertex -> m VertexHint) -> [Type] -> m (Map TypeGraphVertex (Set Name))
 typeSynonymMap augment types =
      (Map.filter (not . Set.null) .
       Map.fromList .
       List.map (\node -> (node, Set.fromList (_synonyms node))) .
       Map.keys) <$> typeGraphEdges augment types
 
-typeSynonymMapSimple :: forall m. DsMonad m => (TypeGraphNode -> m VertexHint) -> [Type] -> m (Map (E Type) (Set Name))
+typeSynonymMapSimple :: forall m. DsMonad m => (TypeGraphVertex -> m VertexHint) -> [Type] -> m (Map (E Type) (Set Name))
 typeSynonymMapSimple augment types =
     simplify <$> typeSynonymMap augment types
     where
-      simplify :: Map TypeGraphNode (Set Name) -> Map (E Type) (Set Name)
+      simplify :: Map TypeGraphVertex (Set Name) -> Map (E Type) (Set Name)
       simplify mp = Map.fromListWith Set.union (List.map (\ (k, a) -> (markExpanded (_etype k), a)) (Map.toList mp))

@@ -9,7 +9,7 @@ import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (E, markExpanded, runExpanded)
 import Language.Haskell.TH.Context.Helpers (pprint')
-import Language.Haskell.TH.Context.TypeGraph (TypeGraphNode(..), TypeGraphEdges)
+import Language.Haskell.TH.Context.TypeGraph (TypeGraphVertex(..), TypeGraphEdges)
 import Language.Haskell.TH.Syntax (Lift(lift))
 
 data SetDifferences a = SetDifferences {unexpected :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
@@ -36,8 +36,8 @@ pprintDec = pprint' . unReify
 pprintType :: E Type -> String
 pprintType = pprint' . unReify . runExpanded
 
-pprintNode :: TypeGraphNode -> String
-pprintNode (TypeGraphNode {_field = fld, _synonyms = ns, _etype = typ}) =
+pprintVertex :: TypeGraphVertex -> String
+pprintVertex (TypeGraphVertex {_field = fld, _synonyms = ns, _etype = typ}) =
     maybe "" printField fld ++
     pprint' (unReify typ) ++
     if null ns then "" else (" (aka " ++ intercalate ", " (map (show . unReifyName) ns) ++ ")")
@@ -50,11 +50,11 @@ pprintPred :: E Pred -> String
 pprintPred = pprint' . unReify . runExpanded
 
 edgesToStrings :: TypeGraphEdges -> [(String, [String])]
-edgesToStrings mp = List.map (\ (t, ts) -> (pprintNode t, map pprintNode (Set.toList ts))) (Map.toList mp)
+edgesToStrings mp = List.map (\ (t, ts) -> (pprintVertex t, map pprintVertex (Set.toList ts))) (Map.toList mp)
 
-instance Lift TypeGraphNode where
-    lift (TypeGraphNode {_field = f, _synonyms = ns, _etype = t}) =
-        [|TypeGraphNode {_field = $(lift f), _synonyms = $(lift ns), _etype = $(lift t)}|]
+instance Lift TypeGraphVertex where
+    lift (TypeGraphVertex {_field = f, _synonyms = ns, _etype = t}) =
+        [|TypeGraphVertex {_field = $(lift f), _synonyms = $(lift ns), _etype = $(lift t)}|]
 
 instance Lift a => Lift (Set a) where
     lift s = [|Set.fromList $(lift (Set.toList s))|]

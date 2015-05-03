@@ -9,7 +9,7 @@ import Data.Set as Set (fromList, map, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphNode(..), typeNode, VertexHint(Vertex), simpleNode, typeSynonymMapSimple)
+import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphVertex(..), typeVertex, VertexHint(Normal), simpleVertex, typeSynonymMapSimple)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
@@ -22,52 +22,52 @@ import Values
 tests :: SpecM () ()
 tests = do
   it "records a type synonym" $ do
-     $([t|String|] >>= \ string -> typeNode string >>= lift) `shouldBe` (TypeGraphNode Nothing [''String] (AppT ListT (ConT ''Char)))
+     $([t|String|] >>= \ string -> typeVertex string >>= lift) `shouldBe` (TypeGraphVertex Nothing [''String] (AppT ListT (ConT ''Char)))
 
   it "can find the subtypesOfType" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                   runQ [t|Type|] >>= \typ ->
-                                  typeGraphVertices (const $ return Vertex) [typ] >>=
-                                  runQ . lift . List.map pprintNode . Set.toList)) subtypesOfType
+                                  typeGraphVertices (const $ return Normal) [typ] >>=
+                                  runQ . lift . List.map pprintVertex . Set.toList)) subtypesOfType
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Type (typeEdges)" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Type|] >>= \typ ->
-                                typeGraphEdges (const $ return Vertex) [typ] >>=
+                                typeGraphEdges (const $ return Normal) [typ] >>=
                                 runQ . lift . edgesToStrings)) typeEdges
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Dec (decEdges)" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>= \typ ->
-                                typeGraphEdges (const $ return Vertex) [typ] >>=
+                                typeGraphEdges (const $ return Normal) [typ] >>=
                                 runQ . lift . edgesToStrings)) decEdges
         `shouldBe` noDifferences
 
   it "can find the subtypesOfDec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>= \typ ->
-                                typeGraphVertices (const $ return Vertex) [typ] >>=
-                                runQ . lift . List.map pprintNode . Set.toList)) subtypesOfDec
+                                typeGraphVertices (const $ return Normal) [typ] >>=
+                                runQ . lift . List.map pprintVertex . Set.toList)) subtypesOfDec
         `shouldBe` noDifferences
 
   it "can find the arity0SubtypesOfDec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>= \typ ->
-                                typeGraphVertices (const $ return Vertex) [typ] >>=
+                                typeGraphVertices (const $ return Normal) [typ] >>=
                                 filterM (\ t -> typeArity (_etype t) >>= \ a -> return (a == 0)) . Set.toList >>=
-                                runQ . lift . List.map pprintNode)) arity0SubtypesOfDec
+                                runQ . lift . List.map pprintVertex)) arity0SubtypesOfDec
         `shouldBe` noDifferences
 
   it "can find the simpleSubtypesOfDec" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>= \typ ->
-                                typeGraphVertices (const $ return Vertex) [typ] >>=
-                                runQ . lift . List.map pprintNode . Set.toList . Set.map simpleNode)) simpleSubtypesOfDec
+                                typeGraphVertices (const $ return Normal) [typ] >>=
+                                runQ . lift . List.map pprintVertex . Set.toList . Set.map simpleVertex)) simpleSubtypesOfDec
         `shouldBe` noDifferences
 
   it "can find the type synonyms in Dec (decTypeSynonyms)" $ do
      $(withLocalDeclarations [] $
-       runQ [t|Dec|] >>= \typ -> typeSynonymMapSimple (const $ return Vertex) [typ] >>= runQ . lift) `shouldBe` decTypeSynonyms
+       runQ [t|Dec|] >>= \typ -> typeSynonymMapSimple (const $ return Normal) [typ] >>= runQ . lift) `shouldBe` decTypeSynonyms
 
