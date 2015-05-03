@@ -37,14 +37,7 @@ pprintType :: E Type -> String
 pprintType = pprint' . unReify . runExpanded
 
 pprintVertex :: TypeGraphVertex -> String
-pprintVertex (TypeGraphVertex {_field = fld, _syns = ns, _etype = typ}) =
-    maybe "" printField fld ++
-    pprint' (unReify typ) ++
-    if Set.null ns then "" else (" (aka " ++ intercalate ", " (map (show . unReifyName) (Set.toList ns)) ++ ")")
-
-printField :: (Name, Name, Either Int Name) -> String
-printField (tname, cname, field) =
-    show (unReifyName tname) ++ "." ++ either (\ n -> show (unReifyName cname) ++ "[" ++ show n ++ "]") (\ f -> show (unReifyName f)) field ++ "::"
+pprintVertex = pprint'
 
 pprintPred :: E Pred -> String
 pprintPred = pprint' . unReify . runExpanded
