@@ -298,15 +298,10 @@ typeGraphInfo hs types = do
 -- multiple augmented nodes, one for each field that contains that
 -- type, and perhaps one without field information if the type appears
 -- embedded in a type application or as a top level type.
-typeGraphEdges :: forall m. DsMonad m => [(TypeGraphVertex, VertexHint)] -> TypeGraphInfo -> m TypeGraphEdges
-typeGraphEdges hintList info =
-    execStateT (mapM_ doType (Set.toList (view typeSet info))) mempty
+typeGraphEdges :: forall m. DsMonad m => TypeGraphInfo -> m TypeGraphEdges
+typeGraphEdges info = do
+  execStateT (mapM_ doType (Set.toList (view typeSet info))) mempty
     where
-      augment :: TypeGraphVertex -> [VertexHint]
-      augment node =
-          let mp = Map.fromListWith (++) (List.map (\ (key, hint) -> (key, [hint])) hintList) in
-          Map.findWithDefault [] node mp
-
       typeNodes :: E Type -> [TypeGraphVertex]
       typeNodes typ =
           let node0 = TypeGraphVertex { _etype = typ
@@ -315,14 +310,14 @@ typeGraphEdges hintList info =
           node0 : List.map (\ fld -> node0 {_field = Just fld}) (Set.toList (Map.findWithDefault Set.empty typ (view fields info)))
 
       doType :: (E Type) -> StateT TypeGraphEdges m ()
-      doType typ = mapM_ (\node -> doNode node (augment node)) (typeNodes typ)
+      doType typ = mapM_ doNode (typeNodes typ)
 
-      doNode :: TypeGraphVertex -> [VertexHint] -> StateT TypeGraphEdges m ()
-      doNode node hs = do
+      doNode :: TypeGraphVertex -> StateT TypeGraphEdges m ()
+      doNode node = do
         mp <- get
         case Map.lookup node mp of
           Just _ -> return () -- already visited
-          Nothing -> doHints node hs
+          Nothing -> doHints node (Map.findWithDefault [] node (_hints info))
 
       doHints node [] = do
         addNode node
@@ -340,7 +335,7 @@ typeGraphEdges hintList info =
         when (node == node') (error $ "diverted to self: " ++ show node)
         addNode node'
         addEdge node node'
-        doNode node' (augment node')
+        doNode node'
       doHints node (Extra typ' : more) = do
         doHints node (Divert typ' : more)
         etyp <- expandType typ'
@@ -356,12 +351,9 @@ typeGraphEdges hintList info =
 -- | Return the set of types embedded in the given type.  This is just
 -- the nodes of the type graph.  The type synonymes are expanded by the
 -- th-desugar package to make them suitable for use as map keys.
-typeGraphVertices :: forall m. DsMonad m =>
-                     [(TypeGraphVertex, VertexHint)]
-                  -> TypeGraphInfo
-                  -> m (Set TypeGraphVertex)
-typeGraphVertices hintList info =
-    (Set.fromList . Map.keys) <$> (typeGraphEdges hintList info :: m TypeGraphEdges)
+typeGraphVertices :: forall m. DsMonad m => TypeGraphInfo -> m (Set TypeGraphVertex)
+typeGraphVertices info =
+    (Set.fromList . Map.keys) <$> (typeGraphEdges info :: m TypeGraphEdges)
 
 -- | Build a graph from the result of typeGraphEdges, each edge goes
 -- from a type to one of the types it contains.  Thus, each edge
@@ -370,7 +362,7 @@ typeGraphVertices hintList info =
 typeGraph :: forall m node key. (DsMonad m, node ~ TypeGraphVertex, key ~ TypeGraphVertex) =>
                 [(TypeGraphVertex, VertexHint)] -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
 typeGraph hints' types = do
-  typeGraphInfo hints' types >>= typeGraphEdges hints' >>= return . graphFromEdges . triples
+  typeGraphInfo hints' types >>= typeGraphEdges >>= return . graphFromEdges . triples
     where
       triples :: Map TypeGraphVertex (Set TypeGraphVertex) -> [(TypeGraphVertex, TypeGraphVertex, [TypeGraphVertex])]
       triples mp = List.map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
@@ -390,7 +382,7 @@ typeSynonymMap hints' types =
      (Map.filter (not . Set.null) .
       Map.fromList .
       List.map (\node -> (node, _syns node)) .
-      Map.keys) <$> (typeGraphInfo hints' types >>= typeGraphEdges hints')
+      Map.keys) <$> (typeGraphInfo hints' types >>= typeGraphEdges)
 
 typeSynonymMapSimple :: forall m. DsMonad m => [(TypeGraphVertex, VertexHint)] -> [Type] -> m (Map (E Type) (Set Name))
 typeSynonymMapSimple hints' types =
