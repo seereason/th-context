@@ -26,7 +26,7 @@ module Language.Haskell.TH.Context.Expand
     , expandType
     , expandPred
     , expandClassP
-    , E
+    , E(E)
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
