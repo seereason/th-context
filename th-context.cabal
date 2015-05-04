@@ -27,6 +27,7 @@ library
     containers,
     data-default,
     haskell-src-exts,
+    lens,
     mtl,
     syb,
     template-haskell >= 2.9,
