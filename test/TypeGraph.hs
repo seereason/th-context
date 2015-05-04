@@ -8,6 +8,7 @@ import Data.List as List (map)
 import Data.Set as Set (fromList, map, singleton, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
+import Language.Haskell.TH.Context.Expand (runExpanded, E(E))
 import Language.Haskell.TH.Context.Helpers (typeArity)
 import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphVertex(..), typeVertex, VertexHint(Normal), simpleVertex, typeSynonymMapSimple)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
@@ -22,7 +23,7 @@ import Values
 tests :: SpecM () ()
 tests = do
   it "records a type synonym" $ do
-     $([t|String|] >>= \ string -> typeVertex string >>= lift) `shouldBe` (TypeGraphVertex Nothing (singleton ''String) (AppT ListT (ConT ''Char)))
+     $([t|String|] >>= \ string -> typeVertex string >>= lift) `shouldBe` (TypeGraphVertex Nothing (singleton ''String) (E (AppT ListT (ConT ''Char))))
 
   it "can find the subtypesOfType" $ do
      setDifferences (fromList $(withLocalDeclarations [] $
@@ -56,7 +57,7 @@ tests = do
      setDifferences (fromList $(withLocalDeclarations [] $
                                 runQ [t|Dec|] >>= \typ ->
                                 typeGraphVertices (const $ return Normal) [typ] >>=
-                                filterM (\ t -> typeArity (_etype t) >>= \ a -> return (a == 0)) . Set.toList >>=
+                                filterM (\ t -> typeArity (runExpanded (_etype t)) >>= \ a -> return (a == 0)) . Set.toList >>=
                                 runQ . lift . List.map pprintVertex)) arity0SubtypesOfDec
         `shouldBe` noDifferences
 

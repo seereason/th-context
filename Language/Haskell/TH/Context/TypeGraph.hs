@@ -37,7 +37,7 @@ import Data.Map as Map (Map, filter, fromList, fromListWith, keys, lookup, map, 
 import Data.Set as Set (empty, fromList, insert, map, member, null, Set, toList, union)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
-import Language.Haskell.TH.Context.Expand (E, expandType, markExpanded, runExpanded)
+import Language.Haskell.TH.Context.Expand (E(E), expandType, runExpanded)
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.PprLib (hcat, ptext)
@@ -50,12 +50,12 @@ data TypeGraphVertex
     = TypeGraphVertex
       { _field :: Maybe (Name, Name, Either Int Name) -- ^ The record filed which contains this type
       , _syns :: Set Name -- ^ All the type synonyms that expand to this type
-      , _etype :: Type -- ^ The fully expanded type
+      , _etype :: E Type -- ^ The fully expanded type
       } deriving (Eq, Ord, Show)
 
 instance Ppr TypeGraphVertex where
     ppr (TypeGraphVertex {_field = fld, _syns = ns, _etype = typ}) =
-        hcat (ppr (unReify typ) :
+        hcat (ppr (unReify (runExpanded typ)) :
               case (fld, Set.toList ns) of
                  (Nothing, []) -> []
                  _ ->   [ptext " ("] ++
@@ -78,14 +78,15 @@ instance Ppr TypeGraphVertex where
 
 -- | Build a TypeGraphVertex from an unexpanded type.  This records the
 -- type synonyms we expand to reach the "real" type.
-typeVertex :: DsMonad m => Type -> m TypeGraphVertex
+typeVertex :: forall m. DsMonad m => Type -> m TypeGraphVertex
 typeVertex typ =
     case typ of
       (ConT name) -> doName name -- special case to catch top level type synonyms.  Others are removed by expandType below.
       _ -> doType typ
     where
       -- What happens to ForallT types here?
-      doType typ' = expandType typ' >>= \(etype :: E Type) -> return $ TypeGraphVertex {_field = Nothing, _syns = Set.empty, _etype = runExpanded etype}
+      doType :: Type -> m TypeGraphVertex
+      doType typ' = expandType typ' >>= \(etype :: E Type) -> return $ TypeGraphVertex {_field = Nothing, _syns = Set.empty, _etype = etype}
       doName name = runQ (reify name) >>= doInfo name
       doInfo name (TyConI dec) = doDec name dec
       doInfo name _ = doType (ConT name)
@@ -163,17 +164,17 @@ typeGraphEdges augment types = do
           -- Find and add the out edges from a node.
           doEdges :: TypeGraphVertex -> StateT TypeGraphEdges m ()
           -- Do we treat this as a distinct type?
-          doEdges (TypeGraphVertex {_etype = (ForallT _ _ typ')}) =
+          doEdges (TypeGraphVertex {_etype = E (ForallT _ _ typ')}) =
               -- typeGraphVertex (_field node) (_synonyms node) typ' >>= \node' -> addEdge node' >> doVertex node'
-              doEdges (node {_etype = typ'})
-          doEdges (TypeGraphVertex {_etype = (AppT container element)}) = do
+              doEdges (node {_etype = E typ'})
+          doEdges (TypeGraphVertex {_etype = E (AppT container element)}) = do
             cnode <- typeVertex container
             enode <- typeVertex element
             addEdge cnode
             addEdge enode
             doVertex used cnode
             doVertex used enode
-          doEdges (TypeGraphVertex {_etype = (ConT name)}) = do
+          doEdges (TypeGraphVertex {_etype = E (ConT name)}) = do
             info <- qReify name
             case info of
               TyConI dec -> doDec dec
@@ -230,4 +231,4 @@ typeSynonymMapSimple augment types =
     simplify <$> typeSynonymMap augment types
     where
       simplify :: Map TypeGraphVertex (Set Name) -> Map (E Type) (Set Name)
-      simplify mp = Map.fromListWith Set.union (List.map (\ (k, a) -> (markExpanded (_etype k), a)) (Map.toList mp))
+      simplify mp = Map.fromListWith Set.union (List.map (\ (k, a) -> (_etype k, a)) (Map.toList mp))
