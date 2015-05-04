@@ -33,6 +33,7 @@ import Control.Applicative
 import Data.Monoid (mempty)
 #endif
 import Control.Lens (makeLenses, view)
+import Control.Monad (when)
 import Control.Monad.Reader (MonadReader)
 import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Data.Default (Default(def))
@@ -41,7 +42,7 @@ import Data.Graph (Graph, Vertex, graphFromEdges)
 import Data.List as List (concatMap, intersperse, map)
 import Data.Map as Map (Map, filter, findWithDefault, fromList, fromListWith, insert, insertWith,
                         keys, lookup, map, mapKeys, toList, update, alter)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set as Set (empty, fromList, insert, map, member, null, Set, singleton, toList, union)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
@@ -50,8 +51,6 @@ import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.PprLib (hcat, ptext)
 import Language.Haskell.TH.Syntax (Quasi(..))
-
-import Debug.Trace
 
 -- | For simple type graphs always set _field and _synonyms to Nothing.
 data TypeGraphVertex
@@ -185,6 +184,7 @@ scanTypes types =
       doInfo :: Name -> Info -> StateT (Set Type) m ()
       doInfo _tname (TyConI dec) = doDec dec
       doInfo _tname (PrimTyConI _ _ _) = return ()
+      doInfo _tname (FamilyI _ _) = return () -- Not sure what to do here
       doInfo _ info = error $ "scanTypes: " ++ show info
 
       doDec :: Dec -> StateT (Set Type) m ()
@@ -292,92 +292,76 @@ typeGraphInfo hs types = do
             hintType (_, Extra x) = Just x
             hintType _ = Nothing
 
+-- | Build the edges of a graph whose nodes are expanded types
+-- augmented with their known type synonyms and information about the
+-- field name that contains the type.  Thus, each type node turns into
+-- multiple augmented nodes, one for each field that contains that
+-- type, and perhaps one without field information if the type appears
+-- embedded in a type application or as a top level type.
+typeGraphEdges :: forall m. DsMonad m => [(TypeGraphVertex, VertexHint)] -> TypeGraphInfo -> m TypeGraphEdges
+typeGraphEdges hintList info =
+    execStateT (mapM_ doType (Set.toList (view typeSet info))) mempty
+    where
+      augment :: TypeGraphVertex -> [VertexHint]
+      augment node =
+          let mp = Map.fromListWith (++) (List.map (\ (key, hint) -> (key, [hint])) hintList) in
+          Map.findWithDefault [] node mp
+
+      typeNodes :: E Type -> [TypeGraphVertex]
+      typeNodes typ =
+          let node0 = TypeGraphVertex { _etype = typ
+                                    , _syns = fromMaybe Set.empty (Map.lookup typ (view synonyms info))
+                                    , _field = Nothing } in
+          node0 : List.map (\ fld -> node0 {_field = Just fld}) (Set.toList (Map.findWithDefault Set.empty typ (view fields info)))
+
+      doType :: (E Type) -> StateT TypeGraphEdges m ()
+      doType typ = mapM_ (\node -> doNode node (augment node)) (typeNodes typ)
+
+      doNode :: TypeGraphVertex -> [VertexHint] -> StateT TypeGraphEdges m ()
+      doNode node hs = do
+        mp <- get
+        case Map.lookup node mp of
+          Just _ -> return () -- already visited
+          Nothing -> doHints node hs
+
+      doHints node [] = do
+        addNode node
+        mapM_ (\typ' -> mapM_ (addEdge node) (typeNodes typ')) (Set.toList (Map.findWithDefault Set.empty (_etype node) (view edges info)))
+      doHints _node (Hidden : _) = return () -- this should be alone
+      doHints node (Sink : _) = addNode node -- so should this
+      doHints node (Normal : _) = doHints node []
+      doHints node (Divert typ' : _) = do
+        addNode node
+        etyp <- expandType typ'
+        -- By setting _field to Nothing here we make it possible for a
+        -- Divert to the same type to work, as long as the _field was
+        -- something before.
+        let node' = node {_etype = etyp, _field = Nothing}
+        when (node == node') (error $ "diverted to self: " ++ show node)
+        addNode node'
+        addEdge node node'
+        doNode node' (augment node')
+      doHints node (Extra typ' : more) = do
+        doHints node (Divert typ' : more)
+        etyp <- expandType typ'
+        let node' = node {_etype = etyp}
+        doHints node' more
+
+      addNode :: TypeGraphVertex -> StateT TypeGraphEdges m ()
+      addNode node = modify $ Map.alter (maybe (Just Set.empty) Just) node
+
+      addEdge :: TypeGraphVertex -> TypeGraphVertex -> StateT TypeGraphEdges m ()
+      addEdge node node' = modify $ Map.update (Just . Set.insert node') node
+
 -- | Return the set of types embedded in the given type.  This is just
 -- the nodes of the type graph.  The type synonymes are expanded by the
 -- th-desugar package to make them suitable for use as map keys.
 typeGraphVertices :: forall m. DsMonad m =>
                      [(TypeGraphVertex, VertexHint)]
-                  -> [Type]
+                  -> TypeGraphInfo
                   -> m (Set TypeGraphVertex)
-typeGraphVertices hints' types =
-    (Set.fromList . Map.keys) <$> (typeGraphEdges hints' types :: m TypeGraphEdges)
-
-typeGraphEdges
-    :: forall m. DsMonad m =>
-       [(TypeGraphVertex, VertexHint)]
-           -- ^ This function is used to obtain hints about the graph
-           -- structure around a given node.  If it returns NoVertex,
-           -- no vertices or edges are added to the graph.  If it
-           -- returns Sink no outgoing edges are added.  The current
-           -- use case Substitute is to see if there is an instance of
-           -- class @View a b@ where @a@ is the type passed to
-           -- @doType@, and replace it with @b@, and use the lens
-           -- returned by @View's@ method to convert between @a@ and
-           -- @b@ (i.e. to implement the edge in the type graph.)
-    -> [Type]
-    -> m TypeGraphEdges
-typeGraphEdges hints' types = do
-  execStateT (mapM_ (\ typ -> typeVertex typ >>= doVertex Set.empty) types) mempty
-    where
-      hintMap = Map.fromListWith (++) (List.map (\ (n, h) -> (n, [h])) hints')
-      doVertex :: Set (TypeGraphVertex, VertexHint) -> TypeGraphVertex -> StateT TypeGraphEdges m ()
-      doVertex used node = do
-        (mp :: TypeGraphEdges) <- get
-        let hs = Map.findWithDefault [] node hintMap
-        case Map.lookup node mp of
-          Just _ -> return ()
-          Nothing ->
-            case hs of
-              [hint] | Set.member (node, hint) used -> addVertex >> doEdges node
-              [Normal] -> addVertex >> doEdges node
-              [] -> addVertex >> doEdges node
-              [Hidden] -> return ()
-              [Sink] -> addVertex
-              [hint@(Divert typ')] -> typeVertex typ' >>= \node' -> addVertex >> addEdge node' >> doVertex (Set.insert (node, hint) used) node'
-              [hint@(Extra typ')] -> typeVertex typ' >>= \node' -> addVertex >> doEdges node >> addEdge node' >> doVertex (Set.insert (node, hint) used) node'
-              _ -> error $ "Multiple hints for node " ++ pprint node ++ ": " ++ show hs
-        where
-          addVertex :: StateT TypeGraphEdges m ()
-          -- addVertex a = expandType a >>= \ a' -> modify $ Map.insertWith (flip const) a' Set.empty
-          addVertex = modify $ Map.alter (maybe (Just Set.empty) Just) node
-          addEdge :: TypeGraphVertex -> StateT TypeGraphEdges m ()
-          addEdge node' = modify $ Map.update (Just . Set.insert node') node
-
-          -- Find and add the out edges from a node.
-          doEdges :: TypeGraphVertex -> StateT TypeGraphEdges m ()
-          -- Do we treat this as a distinct type?
-          doEdges (TypeGraphVertex {_etype = E (ForallT _ _ typ')}) =
-              -- typeGraphVertex (_field node) (_synonyms node) typ' >>= \node' -> addEdge node' >> doVertex node'
-              doEdges (node {_etype = E typ'})
-          doEdges (TypeGraphVertex {_etype = E (AppT container element)}) = do
-            cnode <- typeVertex container
-            enode <- typeVertex element
-            addEdge cnode
-            addEdge enode
-            doVertex used cnode
-            doVertex used enode
-          doEdges (TypeGraphVertex {_etype = E (ConT name)}) = do
-            info <- qReify name
-            case info of
-              TyConI dec -> doDec dec
-              _ -> return ()
-              where
-                doDec :: Dec -> StateT TypeGraphEdges m ()
-                doDec dec@(NewtypeD _ tname _ con _) = doCon tname dec con
-                doDec dec@(DataD _ tname _ cons _) = mapM_ (doCon tname dec) cons
-                doDec (TySynD _tname _tvars typ') = trace "unexpected synonym" (return ()) >> typeVertex typ' >>= \node' -> doVertex used node'
-                doDec _ = return ()
-
-                doCon :: Name -> Dec -> Con -> StateT TypeGraphEdges m ()
-                doCon tname dec (ForallC _ _ con) = doCon tname dec con
-                doCon tname dec (NormalC cname flds) = mapM_ (doField tname dec cname) (zip (List.map Left ([1..] :: [Int])) (List.map snd flds))
-                doCon tname dec (RecC cname flds) = mapM_ (doField tname dec cname) (List.map (\ (fname, _, typ') -> (Right fname, typ')) flds)
-                doCon tname dec (InfixC (_, lhs) cname (_, rhs)) = mapM_ (doField tname dec cname) [(Left 1, lhs), (Left 2, rhs)]
-
-                doField :: Name -> Dec -> Name -> (Either Int Name, Type) -> StateT TypeGraphEdges m ()
-                doField tname _dec cname (field, ftype) = fieldVertex ftype (tname, cname, field) >>= \node' -> addEdge node' >> doVertex used node'
-
-          doEdges _ = return ({-trace ("Unrecognized type: " ++ pprint' typ)-} ())
+typeGraphVertices hintList info =
+    (Set.fromList . Map.keys) <$> (typeGraphEdges hintList info :: m TypeGraphEdges)
 
 -- | Build a graph from the result of typeGraphEdges, each edge goes
 -- from a type to one of the types it contains.  Thus, each edge
@@ -386,7 +370,7 @@ typeGraphEdges hints' types = do
 typeGraph :: forall m node key. (DsMonad m, node ~ TypeGraphVertex, key ~ TypeGraphVertex) =>
                 [(TypeGraphVertex, VertexHint)] -> [Type] -> m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
 typeGraph hints' types = do
-  typeGraphEdges hints' types >>= return . graphFromEdges . triples
+  typeGraphInfo hints' types >>= typeGraphEdges hints' >>= return . graphFromEdges . triples
     where
       triples :: Map TypeGraphVertex (Set TypeGraphVertex) -> [(TypeGraphVertex, TypeGraphVertex, [TypeGraphVertex])]
       triples mp = List.map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
@@ -406,7 +390,7 @@ typeSynonymMap hints' types =
      (Map.filter (not . Set.null) .
       Map.fromList .
       List.map (\node -> (node, _syns node)) .
-      Map.keys) <$> typeGraphEdges hints' types
+      Map.keys) <$> (typeGraphInfo hints' types >>= typeGraphEdges hints')
 
 typeSynonymMapSimple :: forall m. DsMonad m => [(TypeGraphVertex, VertexHint)] -> [Type] -> m (Map (E Type) (Set Name))
 typeSynonymMapSimple hints' types =
