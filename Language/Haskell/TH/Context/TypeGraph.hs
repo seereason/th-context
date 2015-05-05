@@ -20,6 +20,8 @@ module Language.Haskell.TH.Context.TypeGraph
     , typeGraphInfo
     , TypeGraphEdges
     , typeGraphEdges
+    , deleteVertices
+    , deleteVerticesM
     , typeGraphVertices
     , typeGraph
     , simpleVertex
@@ -39,14 +41,15 @@ import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Data.Default (Default(def))
 import Data.Generics (Data, everywhere, mkT)
 import Data.Graph (Graph, Vertex, graphFromEdges)
-import Data.List as List (concatMap, intersperse, map)
+import Data.List as List (concatMap, intercalate, intersperse, map, partition)
 import Data.Map as Map (Map, filter, findWithDefault, fromList, fromListWith, insert, insertWith,
-                        keys, lookup, map, mapKeys, toList, update, alter)
+                        keys, lookup, map, mapKeys, partitionWithKey, toList, update, alter)
 import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Set as Set (empty, fromList, insert, map, member, null, Set, singleton, toList, union)
+import Data.Set as Set (empty, filter, fold, fromList, insert, map, member, null, Set, singleton, toList, union)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context.Expand (E(E), expandType, runExpanded)
+import Language.Haskell.TH.Context.Helpers (pprint', typeArity)
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.PprLib (hcat, ptext)
@@ -139,7 +142,7 @@ data TypeGraphInfo
       -- ('StrictType', 'VarStrictType') or the 'VertexHint'
       -- mechanism.
       , _hints :: Map TypeGraphVertex [VertexHint]
-      }
+      } deriving Show
 
 $(makeLenses ''TypeGraphInfo)
 
@@ -191,7 +194,7 @@ scanTypes types =
       doDec (TySynD _ _ typ) = doType typ
       doDec (NewtypeD _ _ _ con _) = doCon con
       doDec (DataD _ _ _ cons _) = mapM_ doCon cons
-      doDec dec = error $ "scanTypes: " ++ pprint dec
+      doDec dec = error $ "scanTypes: " ++ pprint' dec
 
       doCon :: Con -> StateT (Set Type) m ()
       doCon (ForallC _ _ con) = doCon con
@@ -347,6 +350,39 @@ typeGraphEdges info = do
 
       addEdge :: TypeGraphVertex -> TypeGraphVertex -> StateT TypeGraphEdges m ()
       addEdge node node' = modify $ Map.update (Just . Set.insert node') node
+
+-- | Remove victim vertices according to a predicate (False means
+-- remove.)  Extend paths so they bypass victims.
+deleteVertices :: forall a. Ord a => (a -> Bool) -> Map a (Set a) -> Map a (Set a)
+deleteVertices predicate edges = Map.map (extendEdges victims') survivors
+    where
+      -- Split the edge map into survivor keys and victim keys
+      -- Remove the victim keys from the victim destinations
+      (survivors, victims) = Map.partitionWithKey (\ k a -> predicate k) edges
+      -- Where ever a victim appears a survivor's destination set,
+      -- extend that edge with the victim's destination set
+      victims' = Map.map (Set.filter predicate) victims
+
+      extendEdges :: Map a (Set a) -> Set a -> Set a
+      extendEdges extensions s = flatten (Set.map (\ v -> Map.findWithDefault (singleton v) v extensions) s)
+
+      flatten :: Set (Set a) -> Set a
+      flatten s = Set.fold Set.union Set.empty s
+
+deleteVerticesM :: forall m a. (Monad m, Ord a) => (a -> m Bool) -> Map a (Set a) -> m (Map a (Set a))
+deleteVerticesM predicate edges = do
+  (survivors, victims) <- partitionM predicate (Map.keys edges)
+  return $ deleteVertices (`Set.member` (Set.fromList survivors)) edges
+
+partitionM :: forall m a. Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
+partitionM p l = do
+  (flags :: [Bool]) <- mapM p l
+  let pairs :: [(a, Bool)]
+      pairs = zip l flags
+      as :: [(a, Bool)]
+      bs :: [(a, Bool)]
+      (as, bs) = partition snd pairs
+  return $ (List.map fst as, List.map fst bs)
 
 -- | Return the set of types embedded in the given type.  This is just
 -- the nodes of the type graph.  The type synonymes are expanded by the

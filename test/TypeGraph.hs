@@ -3,6 +3,7 @@
 {-# OPTIONS_GHC -Wall #-}
 module TypeGraph where
 
+import Control.Applicative ((<$>))
 import Control.Monad (filterM)
 import Data.List as List (map)
 import Data.Set as Set (fromList, map, singleton, toList)
@@ -10,7 +11,7 @@ import Data.Set as Set (fromList, map, singleton, toList)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (runExpanded, E(E))
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphVertex(..), typeGraphInfo, typeVertex, simpleVertex, typeSynonymMapSimple)
+import Language.Haskell.TH.Context.TypeGraph (deleteVerticesM, typeGraphVertices, typeGraphEdges, TypeGraphVertex(..), typeGraphInfo, typeVertex, simpleVertex, typeSynonymMapSimple)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
@@ -37,6 +38,14 @@ tests = do
                                 runQ [t|Type|] >>= \typ ->
                                 typeGraphInfo [] [typ] >>= typeGraphEdges >>=
                                 runQ . lift . edgesToStrings)) typeEdges
+        `shouldBe` noDifferences
+
+  it "can find the edges of the arity 0 subtype graph of Type (arity0TypeEdges)" $ do
+     setDifferences (fromList $(withLocalDeclarations [] $
+                                runQ [t|Type|] >>= \typ ->
+                                typeGraphInfo [] [typ] >>= typeGraphEdges >>=
+                                deleteVerticesM (\ v -> (== 0) <$> (typeArity . runExpanded . _etype) v) >>=
+                                runQ . lift . edgesToStrings)) arity0TypeEdges
         `shouldBe` noDifferences
 
   it "can find the edges of the subtype graph of Dec (decEdges)" $ do
