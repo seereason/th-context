@@ -20,8 +20,6 @@ module Language.Haskell.TH.Context.TypeGraph
     , typeGraphInfo
     , TypeGraphEdges
     , typeGraphEdges
-    , deleteVertices
-    , deleteVerticesM
     , typeGraphVertices
     , typeGraph
     , simpleVertex
@@ -41,11 +39,11 @@ import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Data.Default (Default(def))
 import Data.Generics (Data, everywhere, mkT)
 import Data.Graph (Graph, Vertex, graphFromEdges)
-import Data.List as List (concatMap, intercalate, intersperse, map, partition)
+import Data.List as List (concatMap, intercalate, intersperse, map)
 import Data.Map as Map (Map, filter, findWithDefault, fromList, fromListWith, insert, insertWith,
-                        keys, lookup, map, mapKeys, partitionWithKey, toList, update, alter)
+                        keys, lookup, map, mapKeys, toList, update, alter)
 import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Set as Set (empty, filter, fold, fromList, insert, map, member, null, Set, singleton, toList, union)
+import Data.Set as Set (empty, fromList, insert, map, member, null, Set, singleton, toList, union)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context.Expand (E(E), expandType, runExpanded)
@@ -85,6 +83,16 @@ instance Ppr TypeGraphVertex where
 
           unReifyName :: Name -> Name
           unReifyName = mkName . nameBase
+
+instance Ppr TypeGraphEdges where
+    ppr x =
+        ptext $ intercalate "\n  " $
+          "edges:" : (List.map
+                       (\ (k, ks) -> intercalate "\n    " ((pprint' k ++ "->") : List.map pprint' (Set.toList ks)))
+                       (Map.toList x))
+
+instance Ppr (Set TypeGraphVertex) where
+    ppr x = ptext (intercalate "\n  " ("vertices:" : List.map pprint' (Set.toList x)))
 
 -- | Build a TypeGraphVertex from an unexpanded type.  This records the
 -- type synonyms we expand to reach the "real" type.
@@ -205,10 +213,12 @@ scanTypes types =
       doField :: (Either Int Name, Type) -> StateT (Set Type) m ()
       doField (_, ftyp) = doType ftyp
 
+-- | Discover the types with all type synonyms fully expanded.
 findExpanded :: DsMonad m => Set Type -> m (Map Type (E Type))
 findExpanded types =
     execStateT (mapM (\typ -> expandType typ >>= \etyp -> modify (Map.insert typ etyp)) (Set.toList types)) mempty
 
+-- | Discover the type synonyms
 findSynonyms :: DsMonad m => Set Type -> m (Map Type (Set Name))
 findSynonyms types =
     execStateT (mapM_ doType (Set.toList types)) mempty
@@ -221,6 +231,7 @@ findSynonyms types =
       doDec (TySynD tname _ typ) = modify (Map.insertWith union typ (singleton tname))
       doDec _ = return ()
 
+-- | Discover the field types
 findFields :: DsMonad m => Set Type -> m (Map Type (Set (Name, Name, Either Int Name)))
 findFields types =
     execStateT (mapM_ doType (Set.toList types)) mempty
@@ -243,6 +254,7 @@ findFields types =
 
       doField tname cname (fname, ftyp) = modify (Map.insertWith union ftyp (singleton (tname, cname, fname)))
 
+-- | Discover the edges of the graph of the subtype relation.  Ignores SigT.
 findEdges :: DsMonad m => Set Type -> m (Map Type (Set Type))
 findEdges types =
     execStateT (mapM_ doType (Set.toList types)) mempty
@@ -274,14 +286,14 @@ typeGraphInfo hs types = do
   let hintTypes = mapMaybe hintType hs
   types' <- scanTypes (types ++ hintTypes)
   (ex :: Map Type (E Type)) <- findExpanded types'
-  (sy :: Map (E Type) (Set Name)) <- findSynonyms types' >>= return . Map.fromListWith union . List.map (\ (typ, names) -> let Just etyp = Map.lookup typ ex in (etyp, names))  . Map.toList
-  fl <- findFields types' >>= return . Map.fromListWith union . List.map (\ (typ, names) -> (exptyp ex typ, names))  . Map.toList
-  ed <- findEdges types' >>= return . Map.fromListWith union . List.map (\ (typ, types'') -> (exptyp ex typ, Set.map (exptyp ex) types'')) . Map.toList
-{-
-  hs <- let mp = Map.map sequence (Map.fromListWith (++) (List.map (\ (node, hint) -> (node, [hint])) hints)) in
-        \node -> Map.findWithDefault (return []) node mp
--}
-  let etypes' = Set.fromList $ List.map (exptyp ex) (Set.toList types')
+  (sy :: Map (E Type) (Set Name)) <-
+      -- Build the type synonym map and then expand the types in its
+      -- keys.  This will collapse some of the nodes if they differed
+      -- only in the use of synonyms.
+      findSynonyms types' >>= return . Map.fromListWith union . List.map (\ (typ, names) -> (expand ex typ, names))  . Map.toList
+  fl <- findFields types' >>= return . Map.fromListWith union . List.map (\ (typ, names) -> (expand ex typ, names))  . Map.toList
+  ed <- findEdges types' >>= return . Map.fromListWith union . List.map (\ (typ, dests) -> (expand ex typ, Set.map (expand ex) dests)) . Map.toList
+  let etypes' = Set.fromList $ List.map (expand ex) (Set.toList types')
   return $ TypeGraphInfo { _expanded = ex
                          , _synonyms = sy
                          , _fields = fl
@@ -289,7 +301,7 @@ typeGraphInfo hs types = do
                          , _edges = ed
                          , _hints =  Map.fromListWith (++) (List.map (\ (n, h) -> (n, [h])) hs)
                          }
-      where exptyp ex typ = let Just etyp = Map.lookup typ ex in etyp
+      where expand ex typ = let Just etyp = Map.lookup typ ex in etyp
             hintType :: (TypeGraphVertex, VertexHint) -> Maybe Type
             hintType (_, Divert x) = Just x
             hintType (_, Extra x) = Just x
@@ -350,39 +362,6 @@ typeGraphEdges info = do
 
       addEdge :: TypeGraphVertex -> TypeGraphVertex -> StateT TypeGraphEdges m ()
       addEdge node node' = modify $ Map.update (Just . Set.insert node') node
-
--- | Remove victim vertices according to a predicate (False means
--- remove.)  Extend paths so they bypass victims.
-deleteVertices :: forall a. Ord a => (a -> Bool) -> Map a (Set a) -> Map a (Set a)
-deleteVertices predicate edges = Map.map (extendEdges victims') survivors
-    where
-      -- Split the edge map into survivor keys and victim keys
-      -- Remove the victim keys from the victim destinations
-      (survivors, victims) = Map.partitionWithKey (\ k a -> predicate k) edges
-      -- Where ever a victim appears a survivor's destination set,
-      -- extend that edge with the victim's destination set
-      victims' = Map.map (Set.filter predicate) victims
-
-      extendEdges :: Map a (Set a) -> Set a -> Set a
-      extendEdges extensions s = flatten (Set.map (\ v -> Map.findWithDefault (singleton v) v extensions) s)
-
-      flatten :: Set (Set a) -> Set a
-      flatten s = Set.fold Set.union Set.empty s
-
-deleteVerticesM :: forall m a. (Monad m, Ord a) => (a -> m Bool) -> Map a (Set a) -> m (Map a (Set a))
-deleteVerticesM predicate edges = do
-  (survivors, victims) <- partitionM predicate (Map.keys edges)
-  return $ deleteVertices (`Set.member` (Set.fromList survivors)) edges
-
-partitionM :: forall m a. Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
-partitionM p l = do
-  (flags :: [Bool]) <- mapM p l
-  let pairs :: [(a, Bool)]
-      pairs = zip l flags
-      as :: [(a, Bool)]
-      bs :: [(a, Bool)]
-      (as, bs) = partition snd pairs
-  return $ (List.map fst as, List.map fst bs)
 
 -- | Return the set of types embedded in the given type.  This is just
 -- the nodes of the type graph.  The type synonymes are expanded by the

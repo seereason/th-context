@@ -36,6 +36,7 @@ library
   ghc-options:      -Wall
   exposed-modules:  Language.Haskell.TH.Context,
                     Language.Haskell.TH.Context.Expand,
+                    Language.Haskell.TH.Context.Graph,
                     Language.Haskell.TH.Context.Helpers,
                     Language.Haskell.TH.Context.Reify,
                     Language.Haskell.TH.Context.Simple,

@@ -10,8 +10,9 @@ import Data.Set as Set (fromList, map, singleton, toList)
 --import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.Context.Expand (runExpanded, E(E))
+import Language.Haskell.TH.Context.Graph (deleteVerticesM)
 import Language.Haskell.TH.Context.Helpers (typeArity)
-import Language.Haskell.TH.Context.TypeGraph (deleteVerticesM, typeGraphVertices, typeGraphEdges, TypeGraphVertex(..), typeGraphInfo, typeVertex, simpleVertex, typeSynonymMapSimple)
+import Language.Haskell.TH.Context.TypeGraph (typeGraphVertices, typeGraphEdges, TypeGraphVertex(..), typeGraphInfo, typeVertex, simpleVertex, typeSynonymMapSimple)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
 import Language.Haskell.TH.Syntax
