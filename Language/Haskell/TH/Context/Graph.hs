@@ -1,50 +1,63 @@
 -- | Abstract operations on Maps containing graph edges.
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Language.Haskell.TH.Context.Graph
     ( GraphEdges
-    , filterVertices
-    , extendEdges
-    , removeEdges
-    , filterVerticesM
+    , cutVertex
+    , cutVertices
+    , cutVerticesM
+    , mergeVertex
+    , mergeVertices
+    , mergeVerticesM
     , partitionM
+    , flatten
+    , graphFromMap
     ) where
 
+import Control.Monad (filterM)
+import Data.Graph hiding (edges)
 import Data.List as List
 import Data.Map as Map
 import Data.Set as Set
 
 type GraphEdges v = Map v (Set v)
 
--- | Remove victim vertices according to a predicate (False means
--- remove.)  Extend paths so they bypass victims.
-filterVertices :: forall a. Ord a => (GraphEdges a -> Set a -> Set a) -> (a -> Bool) -> GraphEdges a -> GraphEdges a
-filterVertices updateEdges predicate edges = Map.map (updateEdges victims') survivors
+-- | Remove a node and all its in- and out-edges.
+cutVertex :: (Eq a, Ord a) => a -> GraphEdges a -> GraphEdges a
+cutVertex victim edges = Map.map (Set.filter (/= victim)) $ Map.filterWithKey (\k _ -> k /= victim) edges
+
+cutVertices :: (Eq a, Ord a) => (a -> Bool) -> GraphEdges a -> GraphEdges a
+cutVertices victim edges = List.foldr cutVertex edges (List.filter victim (Map.keys edges))
+
+cutVerticesM :: (Monad m, Eq a, Ord a) => (a -> m Bool) -> GraphEdges a -> m (GraphEdges a)
+cutVerticesM victim edges = do
+  victims <- filterM victim (Map.keys edges) >>= return . Set.fromList
+  return $ cutVertices (`Set.member` victims) edges
+
+-- | Merge a node into the nodes that are its in-edges.
+mergeVertex :: (Eq a, Ord a) => a -> GraphEdges a -> GraphEdges a
+mergeVertex victim edges =
+  survivorEdges'
     where
-      -- Split the edge map into survivor keys and victim keys
-      -- Remove the victim keys from the victim destinations
-      (survivors, victims) = Map.partitionWithKey (\ k _ -> predicate k) edges
-      -- Where ever a victim appears a survivor's destination set,
-      -- extend that edge with the victim's destination set
-      victims' = Map.map (Set.filter predicate) victims
+      -- Wherever the victim vertex appears as an out-edge, substitute the victimOut set
+      survivorEdges' = Map.mapWithKey (\ k s -> if Set.member victim s then Set.union (Set.delete victim s) (Set.delete k victimOut) else s) survivorEdges
+      -- Split map into victim vertex and other vertices
+      (victimEdges, survivorEdges) = partitionWithKey (\ v _ -> (v == victim)) edges
+      -- Get the out-edges of the victim vertex
+      victimOut = Set.delete victim $ Set.unions $ Map.elems victimEdges
 
--- | Use this function as first argument to filterVertices if, for
--- each victim, we want to connect the start points of the in edges to
--- the end points of the out edges.
-extendEdges :: (Eq a, Ord a) => GraphEdges a -> Set a -> Set a
-extendEdges victimEdges s = flatten (Set.map (\ v -> Map.findWithDefault (Set.singleton v) v victimEdges) s)
+mergeVertices :: (Eq a, Ord a) => (a -> Bool) -> GraphEdges a -> GraphEdges a
+mergeVertices keep edges = List.foldr mergeVertex edges (List.filter (not . keep) (Map.keys edges))
 
--- | Use this function as first argument to filterVertices if we want
--- to delete all the edges that were coming into or out of a victim
--- node.
-removeEdges :: GraphEdges a -> Set a -> Set a
-removeEdges _victimEdges _s = Set.empty
-
-filterVerticesM :: forall m a. (Monad m, Ord a) => (GraphEdges a -> Set a -> Set a) -> (a -> m Bool) -> GraphEdges a -> m (GraphEdges a)
-filterVerticesM updateEdges predicate edges = do
-  (survivors, _victims) <- partitionM predicate (Map.keys edges)
-  return $ filterVertices updateEdges (`Set.member` (Set.fromList survivors)) edges
+mergeVerticesM :: (Monad m, Ord  a) => (a -> m Bool) -> GraphEdges a -> m (GraphEdges a)
+mergeVerticesM predicateM edges =
+    mapM predicateM (Map.keys edges) >>= \flags -> return $ mergeVertices (makePredicate (zip (Map.keys edges) flags)) edges
+    where
+      makePredicate :: Ord a => [(a, Bool)] -> a -> Bool
+      makePredicate pairs = flip (Map.findWithDefault False) (Map.fromList pairs)
 
 partitionM :: forall m a. Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
 partitionM p l = do
@@ -58,3 +71,16 @@ partitionM p l = do
 
 flatten :: Ord a => Set (Set a) -> Set a
 flatten = Set.fold Set.union Set.empty
+
+
+-- | Build a graph from the result of typeGraphEdges, each edge goes
+-- from a type to one of the types it contains.  Thus, each edge
+-- represents a primitive lens, and each path in the graph is a
+-- composition of lenses.
+graphFromMap :: forall node key a. (Ord a, node ~ a, key ~ a) =>
+                GraphEdges a -> (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
+graphFromMap mp =
+    graphFromEdges triples
+    where
+      triples :: [(node, key, [key])]
+      triples = List.map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp

@@ -38,16 +38,16 @@ import Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
 import Control.Monad.State (execStateT, modify, MonadState(get), StateT)
 import Data.Default (Default(def))
 import Data.Generics (Data, everywhere, mkT)
-import Data.Graph (Graph, Vertex, graphFromEdges)
+import Data.Graph (Graph, Vertex)
 import Data.List as List (concatMap, intercalate, intersperse, map)
-import Data.Map as Map (Map, filter, findWithDefault, fromList, fromListWith, insert, insertWith,
-                        keys, lookup, map, mapKeys, toList, update, alter)
+import Data.Map as Map (filter, findWithDefault, fromList, fromListWith, insert, insertWith,
+                        keys, lookup, Map, map, mapKeys, mapWithKey, toList, update, alter)
 import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Set as Set (empty, fromList, insert, map, member, null, Set, singleton, toList, union)
+import Data.Set as Set (delete, empty, fromList, insert, map, member, null, Set, singleton, toList, union)
 import Language.Haskell.Exts.Syntax ()
 import Language.Haskell.TH -- (Con, Dec, nameBase, Type)
 import Language.Haskell.TH.Context.Expand (E(E), expandType, runExpanded)
-import Language.Haskell.TH.Context.Graph (GraphEdges)
+import Language.Haskell.TH.Context.Graph (GraphEdges, graphFromMap)
 import Language.Haskell.TH.Context.Helpers (pprint', typeArity)
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Instances ()
@@ -357,6 +357,7 @@ typeGraphEdges = do
       addNode node = modify $ Map.alter (maybe (Just Set.empty) Just) node
 
       addEdge :: TypeGraphVertex -> TypeGraphVertex -> StateT TypeGraphEdges m ()
+      addEdge node node' | node == node' = return () -- Self nodes make no sense in a subtype graph
       addEdge node node' = modify $ Map.update (Just . Set.insert node') node
 
       typeNodes :: E Type -> StateT TypeGraphEdges m [TypeGraphVertex]
@@ -380,20 +381,16 @@ typeGraphVertices = (Set.fromList . Map.keys) <$> typeGraphEdges
 -- composition of lenses.
 typeGraph :: forall m node key. (DsMonad m, MonadReader TypeGraphInfo m, node ~ TypeGraphVertex, key ~ TypeGraphVertex) =>
                 m (Graph, Vertex -> (node, key, [key]), key -> Maybe Vertex)
-typeGraph =
-  (graphFromEdges . triples) <$> typeGraphEdges
-    where
-      triples :: GraphEdges TypeGraphVertex -> [(TypeGraphVertex, TypeGraphVertex, [TypeGraphVertex])]
-      triples mp = List.map (\ (k, ks) -> (k, k, Set.toList ks)) $ Map.toList mp
+typeGraph = graphFromMap <$> typeGraphEdges
 
--- | Simplify a graph by throwing away the field and type synonym
--- information in each node.  This means the nodes only contain the
--- fully expanded Type value.
+-- | Simplify a graph by throwing away the field information in each
+-- node.  This means the nodes only contain the fully expanded Type
+-- value (and any type synonyms.)
 simpleEdges :: TypeGraphEdges -> TypeGraphEdges
-simpleEdges = Map.mapKeys simpleVertex . Map.map (Set.map simpleVertex)
+simpleEdges = Map.mapWithKey Set.delete . Map.mapKeys simpleVertex . Map.map (Set.map simpleVertex)
 
 simpleVertex :: TypeGraphVertex -> TypeGraphVertex
-simpleVertex node = node {_syns = Set.empty, _field = Nothing}
+simpleVertex node = node {_field = Nothing}
 
 -- | Find all the reachable type synonyms and return then in a Map.
 typeSynonymMap :: forall m. (DsMonad m, MonadReader TypeGraphInfo m) => m (Map TypeGraphVertex (Set Name))
