@@ -58,6 +58,8 @@ library
       Language.Haskell.TH.TypeGraph.Monad
       Language.Haskell.TH.TypeGraph.Unsafe
       Language.Haskell.TH.TypeGraph.Vertex
+  else
+    build-depends: th-typegraph
 
 test-suite th-context-tests
   type:             exitcode-stdio-1.0
