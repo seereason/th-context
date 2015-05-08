@@ -21,11 +21,6 @@ flag patched-for-trac-9262
   Description: This can be turned on if ghc-7.8 has had a patch applied to fix issue 9262
   Default: True
 
-flag local-th-typegraph
-  Description: Link directly to the th-typegraph source modules
-  Default: False
-  Manual: True
-
 library
   hs-source-dirs: .
   build-depends:
@@ -38,7 +33,8 @@ library
     syb,
     template-haskell >= 2.9,
     th-desugar,
-    th-orphans >= 0.10.0
+    th-orphans >= 0.10.0,
+    th-typegraph
   ghc-options:      -Wall
   exposed-modules:  Language.Haskell.TH.Context,
                     Language.Haskell.TH.Context.Reify,
@@ -46,20 +42,6 @@ library
   default-language: Haskell2010
   if flag(patched-for-trac-9262)
     cpp-options:      -DPATCHED_FOR_TRAC_9262
-  if flag(local-th-typegraph)
-    hs-source-dirs: ../th-typegraph
-    exposed-modules:
-      Language.Haskell.TH.TypeGraph.Core
-      Language.Haskell.TH.TypeGraph.Edges
-      Language.Haskell.TH.TypeGraph.Expand
-      Language.Haskell.TH.TypeGraph.Graph
-      Language.Haskell.TH.TypeGraph.Hints
-      Language.Haskell.TH.TypeGraph.Info
-      Language.Haskell.TH.TypeGraph.Monad
-      Language.Haskell.TH.TypeGraph.Unsafe
-      Language.Haskell.TH.TypeGraph.Vertex
-  else
-    build-depends: th-typegraph
 
 test-suite th-context-tests
   type:             exitcode-stdio-1.0
@@ -67,7 +49,7 @@ test-suite th-context-tests
   main-is:          Tests.hs
   build-depends:    array, base, bytestring, containers, deepseq, ghc-prim,
                     hspec, hspec-core, mtl, syb, template-haskell, text,
-                    th-context, th-desugar, th-orphans, th-reify-many
+                    th-context, th-desugar, th-orphans, th-reify-many, th-typegraph
   default-language: Haskell2010
   if flag(patched-for-trac-9262)
     cpp-options:      -DPATCHED_FOR_TRAC_9262
