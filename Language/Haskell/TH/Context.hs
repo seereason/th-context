@@ -2,11 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Language.Haskell.TH.Context
-    ( module Language.Haskell.TH.Context.Expand
-    , module Language.Haskell.TH.Context.Reify
-    , module Language.Haskell.TH.Context.TypeGraph
+    ( module Language.Haskell.TH.Context.Reify
     ) where
 
-import Language.Haskell.TH.Context.Expand (Expanded(markExpanded, runExpanded), expandType, expandPred, expandClassP, E)
 import Language.Haskell.TH.Context.Reify (InstMap, reifyInstancesWithContext, execContext, runContext)
-import Language.Haskell.TH.Context.TypeGraph (VertexHint(..), TypeGraphEdges, typeGraphEdges, typeGraphVertices, typeGraph)

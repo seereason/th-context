@@ -7,9 +7,11 @@ import Data.Monoid ((<>))
 import Data.Set as Set (Set, difference, empty, fromList, null, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context.Expand (E, markExpanded, runExpanded)
-import Language.Haskell.TH.Context.Helpers (pprint')
-import Language.Haskell.TH.Context.TypeGraph (TypeGraphVertex(..), TypeGraphEdges)
+import Language.Haskell.TH.TypeGraph.Core (pprint')
+import Language.Haskell.TH.TypeGraph.Expand (E, markExpanded, runExpanded)
+import Language.Haskell.TH.TypeGraph.Edges (TypeGraphEdges)
+import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
+
 import Language.Haskell.TH.Syntax (Lift(lift))
 
 data SetDifferences a = SetDifferences {unexpected :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
@@ -44,16 +46,3 @@ pprintPred = pprint' . unReify . runExpanded
 
 edgesToStrings :: TypeGraphEdges -> [(String, [String])]
 edgesToStrings mp = List.map (\ (t, ts) -> (pprintVertex t, map pprintVertex (Set.toList ts))) (Map.toList mp)
-
-instance Lift TypeGraphVertex where
-    lift (TypeGraphVertex {_field = f, _syns = ns, _etype = t}) =
-        [|TypeGraphVertex {_field = $(lift f), _syns = $(lift ns), _etype = $(lift t)}|]
-
-instance Lift a => Lift (Set a) where
-    lift s = [|Set.fromList $(lift (Set.toList s))|]
-
-instance (Lift a, Lift b) => Lift (Map a b) where
-    lift mp = [|Map.fromList $(lift (Map.toList mp))|]
-
-instance Lift (E Type) where
-    lift etype = [|markExpanded $(lift (runExpanded etype))|]

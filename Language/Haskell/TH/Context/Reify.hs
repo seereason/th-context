@@ -33,11 +33,11 @@ import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (Map, lookup, insert, singleton, elems)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context.Expand (E, expandPred, expandClassP, runExpanded')
-import Language.Haskell.TH.Context.Helpers (pprint')
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
+import Language.Haskell.TH.TypeGraph.Core (pprint')
+import Language.Haskell.TH.TypeGraph.Expand (E, expandPred, expandClassP, runExpanded')
 
 type InstMap pred = Map pred [InstanceDec]
 

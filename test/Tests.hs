@@ -20,9 +20,7 @@ import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
 import Context (tests)
-import TypeGraph (tests)
 
 main :: IO ()
 main = hspec $ do
-  TypeGraph.tests
   Context.tests
