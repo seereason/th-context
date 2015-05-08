@@ -15,7 +15,7 @@ description:        Use these functions to decide an a not-quite naive fashion
                     whether an instance already exists that satisfies a given
                     context.  This can be used to decide whether an instance
                     needs to be generated, as in th-reify-many.
-extra-source-files: test/Common.hs test/Context.hs test/Tests.hs test/TypeGraph.hs test/Values.hs
+extra-source-files: test/Common.hs test/Context.hs test/Tests.hs test/Values.hs
 
 flag patched-for-trac-9262
   Description: This can be turned on if ghc-7.8 has had a patch applied to fix issue 9262
