@@ -37,7 +37,7 @@ import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 import Language.Haskell.TH.TypeGraph.Core (pprint')
-import Language.Haskell.TH.TypeGraph.Expand (E, expandPred, expandClassP, runExpanded')
+import Language.Haskell.TH.TypeGraph.Expand (E, expandPred, expandClassP, runExpanded)
 
 type InstMap pred = Map pred [InstanceDec]
 
@@ -78,7 +78,7 @@ testInstance className typeParameters (InstanceD instanceContext instanceType _)
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
   -- instance context field.
-  mapM expandPred (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext . map runExpanded'
+  mapM expandPred (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext . map runExpanded
     where
       instancePredicates :: [Type] -> Type -> [Pred]
 #if MIN_VERSION_template_haskell(2,10,0)

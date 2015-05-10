@@ -14,7 +14,7 @@ import Data.Set as Set (Set, fromList)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (reifyInstancesWithContext, runContext)
 import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
-import Language.Haskell.TH.TypeGraph.Expand (expandType, runExpanded')
+import Language.Haskell.TH.TypeGraph.Expand (expandType, runExpanded)
 import Language.Haskell.TH.TypeGraph.Core (pprint')
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
@@ -35,7 +35,7 @@ tests = do
   it "expands types as expected" $ do
      (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |], [t|Maybe (Maybe [Char])|] ])
      let expanded = $(withLocalDeclarations [] (do types <- runQ (sequence [ [t|String|], [t|Maybe String|], [t|Maybe (Maybe String)|] ]) >>= mapM expandType
-                                                   runQ . lift $ (List.map runExpanded' types)))
+                                                   runQ . lift $ (List.map runExpanded types)))
      expanded `shouldBe` expected
 
   -- Test the behavior of th-reify-many
