@@ -71,6 +71,8 @@ test-suite th-context-tests
   default-language: Haskell2010
   if flag(patched-for-trac-9262)
     cpp-options:      -DPATCHED_FOR_TRAC_9262
+  if !flag(local-th-typegraph)
+    build-depends: th-typegraph >= 0.17
 
 source-repository head
   type:     git
