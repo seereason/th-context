@@ -9,7 +9,7 @@ import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.TypeGraph.Core (pprint')
 import Language.Haskell.TH.TypeGraph.Expand (E, markExpanded, runExpanded)
-import Language.Haskell.TH.TypeGraph.Edges (TypeGraphEdges)
+import Language.Haskell.TH.TypeGraph.Graph (GraphEdges)
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
 
 import Language.Haskell.TH.Syntax (Lift(lift))
@@ -44,5 +44,5 @@ pprintVertex = pprint'
 pprintPred :: E Pred -> String
 pprintPred = pprint' . unReify . runExpanded
 
-edgesToStrings :: TypeGraphEdges -> [(String, [String])]
-edgesToStrings mp = List.map (\ (t, ts) -> (pprintVertex t, map pprintVertex (Set.toList ts))) (Map.toList mp)
+edgesToStrings :: (Ppr hint, Ppr key) => GraphEdges hint key -> [(String, (String, [String]))]
+edgesToStrings mp = List.map (\ (t, (h, ts)) -> (pprint' t, (pprint' h, map pprint' (Set.toList ts)))) (Map.toList mp)

@@ -11,7 +11,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.TypeGraph.Expand (E(E), expandType, markExpanded)
 import Language.Haskell.TH.TypeGraph.Core (typeArity)
 import Language.Haskell.TH.TypeGraph.Hints (VertexHint(Normal))
-import Language.Haskell.TH.TypeGraph.Monad (typeGraphVertices, typeGraphEdges)
+import Language.Haskell.TH.TypeGraph.Monad (typeGraphEdges)
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Instances ()
