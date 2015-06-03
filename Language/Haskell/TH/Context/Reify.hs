@@ -26,10 +26,11 @@ import Data.Monoid (mempty)
 import Data.Maybe (isJust)
 #endif
 import Control.Monad (filterM)
-import Control.Monad.State (MonadState, StateT, get, modify, evalStateT, execStateT, runStateT)
+import Control.Monad.State (MonadState, StateT, get, modify, evalStateT, runStateT)
+import Control.Monad.Writer (execWriterT, MonadWriter, tell, WriterT)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
-import Data.Map as Map (elems, insert, insertWith, lookup, Map)
+import Data.Map as Map (elems, insert, lookup, Map, singleton)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
@@ -186,11 +187,13 @@ consistent (ClassP className typeParameters) =
     (not . null) <$> reifyInstancesWithContext className typeParameters -- Do we need additional context here?
 #endif
 
--- | Declare an instance to the state monad.  After this,
--- the instance predicate (constructed from class namd and type
--- parameters) will be considered part of the context for subsequent
--- calls to qReifyInstancesWithContext.
-tellInstance :: (DsMonad m, MonadState (InstMap (E Pred)) m, Quasi m) =>
+-- | Declare an instance to the state and writer monads.  The writer
+-- monad records instances we have created, the state monad also
+-- records instances we have discovered.  After this, the instance
+-- predicate (constructed from class namd and type parameters) will be
+-- considered part of the context for subsequent calls to
+-- qReifyInstancesWithContext.
+tellInstance :: (DsMonad m, MonadWriter (InstMap (E Pred)) m, MonadState (InstMap (E Pred)) m, Quasi m) =>
                 Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
@@ -203,8 +206,8 @@ tellInstance inst@(InstanceD _ instanceType _) =
        case Map.lookup p st of
          Just (_ : _) -> return ()
          _ -> do -- trace ("  " ++ pprint' instanceType) (return ())
-                 -- tell $ Map.singleton p [inst]
-                 modify $ Map.insertWith (++) p [inst]
+                 tell $ Map.singleton p [inst]
+                 modify $ Map.insert p [inst] -- There is no point associating multiple instances with a predicate, it is a compile error
 tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint' inst
 
 unfoldInstance :: Type -> Maybe (Name, [Type])
@@ -220,8 +223,8 @@ evalContext action = evalStateT action (mempty :: (InstMap (E Pred)))
 
 -- | Typical use: run state monads to generate a list of instance
 -- declarations.
-execContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) m () -> m [Dec]
-execContext action = (concat . Map.elems) <$> (execStateT action (mempty :: (InstMap (E Pred))))
+execContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) () -> m [Dec]
+execContext action = (concat . Map.elems) <$> (execWriterT $ evalContext action)
 
 runContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) m r -> m (r, (InstMap (E Pred)))
 runContext action = runStateT action (mempty :: (InstMap (E Pred)))

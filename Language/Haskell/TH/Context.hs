@@ -10,4 +10,4 @@ module Language.Haskell.TH.Context
     , evalContext
     ) where
 
-import Language.Haskell.TH.Context.Reify (InstMap, reifyInstancesWithContext, execContext, runContext)
+import Language.Haskell.TH.Context.Reify (InstMap, tellInstance, reifyInstancesWithContext, runContext, execContext, evalContext)
