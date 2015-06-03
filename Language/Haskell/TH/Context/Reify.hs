@@ -15,7 +15,6 @@ module Language.Haskell.TH.Context.Reify
     , tellInstance
     -- * State/writer monad runners
     , evalContextState
-    , execContextWriter
     , execContext
     , runContext
     ) where
@@ -27,11 +26,10 @@ import Data.Monoid (mempty)
 import Data.Maybe (isJust)
 #endif
 import Control.Monad (filterM)
-import Control.Monad.State (MonadState, StateT, get, modify, evalStateT)
-import Control.Monad.Writer (MonadWriter, tell, WriterT, execWriterT, runWriterT)
+import Control.Monad.State (MonadState, StateT, get, modify, evalStateT, execStateT, runStateT)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
-import Data.Map as Map (Map, lookup, insert, singleton, elems)
+import Data.Map as Map (elems, insert, insertWith, lookup, Map)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
@@ -188,12 +186,11 @@ consistent (ClassP className typeParameters) =
     (not . null) <$> reifyInstancesWithContext className typeParameters -- Do we need additional context here?
 #endif
 
--- | Declare an instance to the state and writer monads.  After this,
+-- | Declare an instance to the state monad.  After this,
 -- the instance predicate (constructed from class namd and type
 -- parameters) will be considered part of the context for subsequent
--- calls to qReifyInstancesWithContext.  The instance will be returned
--- when the writer monad exists so it can be spliced into to program.
-tellInstance :: (DsMonad m, MonadWriter (InstMap (E Pred)) m, MonadState (InstMap (E Pred)) m, Quasi m) =>
+-- calls to qReifyInstancesWithContext.
+tellInstance :: (DsMonad m, MonadState (InstMap (E Pred)) m, Quasi m) =>
                 Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
@@ -206,8 +203,8 @@ tellInstance inst@(InstanceD _ instanceType _) =
        case Map.lookup p st of
          Just (_ : _) -> return ()
          _ -> do -- trace ("  " ++ pprint' instanceType) (return ())
-                 tell $ Map.singleton p [inst]
-                 modify $ Map.insert p [inst]
+                 -- tell $ Map.singleton p [inst]
+                 modify $ Map.insertWith (++) p [inst]
 tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint' inst
 
 unfoldInstance :: Type -> Maybe (Name, [Type])
@@ -218,13 +215,13 @@ unfoldInstance _ = Nothing
 evalContextState :: Monad m => StateT (InstMap (E Pred)) m r -> m r
 evalContextState action = evalStateT action (mempty :: (InstMap (E Pred)))
 
-execContextWriter :: Monad m => WriterT (InstMap (E Pred)) m () -> m (InstMap (E Pred))
-execContextWriter = execWriterT
+-- execContextWriter :: Monad m => WriterT (InstMap (E Pred)) m () -> m (InstMap (E Pred))
+-- execContextWriter = execWriterT
 
--- | Typical use: run both state and writer monads to generate a list of
--- instance declarations.
-execContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) () -> m [Dec]
-execContext action = (concat . Map.elems) <$> (execWriterT $ evalContextState action)
+-- | Typical use: run state monads to generate a list of instance
+-- declarations.
+execContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) m () -> m [Dec]
+execContext action = (concat . Map.elems) <$> (execStateT action (mempty :: (InstMap (E Pred))))
 
-runContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) r -> m (r, (InstMap (E Pred)))
-runContext action = runWriterT $ evalContextState action
+runContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) m r -> m (r, (InstMap (E Pred)))
+runContext action = runStateT action (mempty :: (InstMap (E Pred)))
