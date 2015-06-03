@@ -14,7 +14,7 @@ module Language.Haskell.TH.Context.Reify
     , reifyInstancesWithContext
     , tellInstance
     -- * State/writer monad runners
-    , evalContextState
+    , evalContext
     , execContext
     , runContext
     ) where
@@ -212,8 +212,8 @@ unfoldInstance (ConT name) = Just (name, [])
 unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
 unfoldInstance _ = Nothing
 
-evalContextState :: Monad m => StateT (InstMap (E Pred)) m r -> m r
-evalContextState action = evalStateT action (mempty :: (InstMap (E Pred)))
+evalContext :: Monad m => StateT (InstMap (E Pred)) m r -> m r
+evalContext action = evalStateT action (mempty :: (InstMap (E Pred)))
 
 -- execContextWriter :: Monad m => WriterT (InstMap (E Pred)) m () -> m (InstMap (E Pred))
 -- execContextWriter = execWriterT
