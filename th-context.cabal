@@ -56,6 +56,7 @@ library
       Language.Haskell.TH.TypeGraph.Graph
       Language.Haskell.TH.TypeGraph.Info
       Language.Haskell.TH.TypeGraph.Monad
+      Language.Haskell.TH.TypeGraph.Shape
       Language.Haskell.TH.TypeGraph.Unsafe
       Language.Haskell.TH.TypeGraph.Vertex
   else
