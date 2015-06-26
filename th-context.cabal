@@ -50,7 +50,6 @@ library
     hs-source-dirs: th-typegraph
     exposed-modules:
       Language.Haskell.TH.TypeGraph
-      Language.Haskell.TH.TypeGraph.Core
       Language.Haskell.TH.TypeGraph.Expand
       Language.Haskell.TH.TypeGraph.Free
       Language.Haskell.TH.TypeGraph.Graph
@@ -60,7 +59,7 @@ library
       Language.Haskell.TH.TypeGraph.Unsafe
       Language.Haskell.TH.TypeGraph.Vertex
   else
-    build-depends: th-typegraph >= 0.18
+    build-depends: th-typegraph >= 0.20
 
 test-suite th-context-tests
   type:             exitcode-stdio-1.0
@@ -73,7 +72,7 @@ test-suite th-context-tests
   if flag(patched-for-trac-9262)
     cpp-options:      -DPATCHED_FOR_TRAC_9262
   if !flag(local-th-typegraph)
-    build-depends: th-typegraph >= 0.19
+    build-depends: th-typegraph >= 0.20
 
 source-repository head
   type:     git
