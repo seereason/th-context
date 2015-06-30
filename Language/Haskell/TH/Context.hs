@@ -8,6 +8,10 @@ module Language.Haskell.TH.Context
     , runContext
     , execContext
     , evalContext
+    , S
+    , HasSet(..)
+    , instMap
+    , visited
     ) where
 
-import Language.Haskell.TH.Context.Reify (InstMap, tellInstance, reifyInstancesWithContext, runContext, execContext, evalContext)
+import Language.Haskell.TH.Context.Reify

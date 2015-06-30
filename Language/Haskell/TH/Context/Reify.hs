@@ -6,7 +6,13 @@
 -- I say "nearly correct" because there are cases which are
 -- not handled exactly the way GHC behaves, which may lead to
 -- false (positives?  negatives?)
-{-# LANGUAGE CPP, DeriveDataTypeable, FlexibleContexts, MultiParamTypeClasses, ScopedTypeVariables, StandaloneDeriving #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 module Language.Haskell.TH.Context.Reify
@@ -17,6 +23,10 @@ module Language.Haskell.TH.Context.Reify
     , evalContext
     , execContext
     , runContext
+    , HasSet(getSet, modifySet)
+    , S
+    , instMap
+    , visited
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
@@ -25,19 +35,35 @@ import Data.Monoid (mempty)
 #else
 import Data.Maybe (isJust)
 #endif
+import Control.Lens
 import Control.Monad (filterM)
-import Control.Monad.State (MonadState, StateT, get, modify, evalStateT, runStateT)
+import Control.Monad.State (MonadState, StateT, evalStateT, runStateT)
 import Control.Monad.Writer (execWriterT, MonadWriter, tell, WriterT)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (elems, insert, lookup, Map, singleton)
+import Data.Set (Set)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
-import Language.Haskell.TH.TypeGraph (pprint', E, expandPred, expandClassP, runExpanded)
+import Language.Haskell.TH.TypeGraph (E, expandPred, expandClassP, pprint', runExpanded, TypeGraphVertex)
 
 type InstMap pred = Map pred [InstanceDec]
+
+class HasSet a m where
+    getSet :: m (Set a)
+    modifySet :: (Set a -> Set a) -> m ()
+
+data S
+    = S { _instMap :: InstMap (E Pred)
+        , _visited :: Set TypeGraphVertex }
+
+$(makeLenses ''S)
+
+instance Monad m => HasSet TypeGraphVertex (StateT S m) where
+    getSet = use visited
+    modifySet f = visited %= f
 
 -- | Like 'qReifyInstances', looks up all the instances that match the
 -- given class name and argument types.  Unlike 'qReifyInstances',
@@ -48,30 +74,30 @@ type InstMap pred = Map pred [InstanceDec]
 -- monad 'InstMap', associated with an empty list of predicates, and the
 -- empty list is returned.  Later the caller can use 'tellInstance' to
 -- associate instances with the predicate.
-reifyInstancesWithContext :: forall m. (DsMonad m, MonadState (InstMap (E Pred)) m) =>
+reifyInstancesWithContext :: forall m. (DsMonad m, MonadState S m) =>
                              Name -> [Type] -> m [InstanceDec]
 reifyInstancesWithContext className typeParameters = do
        p <- expandClassP className typeParameters :: m (E Pred)
-       mp <- get
+       mp <- use instMap
        case Map.lookup p mp of
          Just x -> return x
          Nothing -> do
            -- Add an entry with a bogus value to limit recursion on
            -- the predicate we are currently testing
-           modify (Map.insert p [])
+           instMap %= Map.insert p []
            -- Get all the instances of className that unify with the type parameters.
            insts <- qReifyInstances className typeParameters
            -- Filter out the ones that conflict with the instance context
            r <- filterM (testInstance className typeParameters) insts
            -- Now insert the correct value into the map and return it.
-           modify (Map.insert p r)
+           instMap %= Map.insert p r
            return r
 
 -- | Test one of the instances returned by qReifyInstances against the
 -- context we have computed so far.  We have already added a ClassP predicate
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
-testInstance :: (DsMonad m, MonadState (InstMap (E Pred)) m) => Name -> [Type] -> InstanceDec -> m Bool
+testInstance :: (DsMonad m, MonadState S m) => Name -> [Type] -> InstanceDec -> m Bool
 testInstance className typeParameters (InstanceD instanceContext instanceType _) = do
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
@@ -96,13 +122,13 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- parameters with the instance type.  Are they consistent?  Find out
 -- using type synonym expansion, variable substitution, elimination of
 -- vacuous predicates, and unification.
-testContext :: (DsMonad m, MonadState (InstMap (E Pred)) m) => [Pred] -> m Bool
+testContext :: (DsMonad m, MonadState S m) => [Pred] -> m Bool
 testContext context =
     and <$> (mapM consistent =<< simplifyContext context)
 
 -- | Perform type expansion on the predicates, then simplify using
 -- variable substitution and eliminate vacuous equivalences.
-simplifyContext :: (DsMonad m, MonadState (InstMap (E Pred)) m) => [Pred] -> m [Pred]
+simplifyContext :: (DsMonad m, MonadState S m) => [Pred] -> m [Pred]
 simplifyContext context =
     do let context' = concat $ map unify context
        let context'' = foldl simplifyPredicate context' context'
@@ -126,7 +152,7 @@ simplifyPredicate context _ = context
 -- monad and the additional instances that have accumulated in the
 -- State monad.
 #if 0
-testContextWithState :: forall m pred. (DsMonad m, MonadState (InstMap (E Pred)) m) => [Pred] -> m Bool
+testContextWithState :: forall m pred. (DsMonad m, MonadState S m) => [Pred] -> m Bool
 testContextWithState context = do
   -- Is the instance already in the Q monad?
   flag <- testContext context
@@ -160,7 +186,7 @@ unify x = [x]
 -- | Decide whether a predicate is consistent with the accumulated
 -- context.  Use recursive calls to qReifyInstancesWithContext when
 -- we encounter a class name applied to a list of type parameters.
-consistent :: (DsMonad m, MonadState (InstMap (E Pred)) m) => Pred -> m Bool
+consistent :: (DsMonad m, MonadState S m) => Pred -> m Bool
 #if MIN_VERSION_template_haskell(2,10,0)
 consistent typ
     | isJust (unfoldInstance typ) =
@@ -192,7 +218,7 @@ consistent (ClassP className typeParameters) =
 -- predicate (constructed from class namd and type parameters) will be
 -- considered part of the context for subsequent calls to
 -- qReifyInstancesWithContext.
-tellInstance :: (DsMonad m, MonadWriter (InstMap (E Pred)) m, MonadState (InstMap (E Pred)) m, Quasi m) =>
+tellInstance :: (DsMonad m, MonadWriter (InstMap (E Pred)) m, MonadState S m, Quasi m) =>
                 Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
@@ -201,12 +227,12 @@ tellInstance inst@(InstanceD _ instanceType _) =
 #else
        p <- expandPred $ ClassP className typeParameters
 #endif
-       st <- get
-       case Map.lookup p st of
+       mp <- use instMap
+       case Map.lookup p mp of
          Just (_ : _) -> return ()
          _ -> do -- trace ("  " ++ pprint' instanceType) (return ())
                  tell $ Map.singleton p [inst]
-                 modify $ Map.insert p [inst] -- There is no point associating multiple instances with a predicate, it is a compile error
+                 instMap %= Map.insert p [inst] -- There is no point associating multiple instances with a predicate, it is a compile error
 tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint' inst
 
 unfoldInstance :: Type -> Maybe (Name, [Type])
@@ -214,16 +240,16 @@ unfoldInstance (ConT name) = Just (name, [])
 unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
 unfoldInstance _ = Nothing
 
-evalContext :: Monad m => StateT (InstMap (E Pred)) m r -> m r
-evalContext action = evalStateT action (mempty :: (InstMap (E Pred)))
+evalContext :: Monad m => StateT S m r -> m r
+evalContext action = evalStateT action (S mempty mempty)
 
 -- execContextWriter :: Monad m => WriterT (InstMap (E Pred)) m () -> m (InstMap (E Pred))
 -- execContextWriter = execWriterT
 
 -- | Typical use: run state monads to generate a list of instance
 -- declarations.
-execContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) (WriterT (InstMap (E Pred)) m) () -> m [Dec]
+execContext :: (Monad m, Functor m) => StateT S (WriterT (InstMap (E Pred)) m) () -> m [Dec]
 execContext action = (concat . Map.elems) <$> (execWriterT $ evalContext action)
 
-runContext :: (Monad m, Functor m) => StateT (InstMap (E Pred)) m r -> m (r, (InstMap (E Pred)))
-runContext action = runStateT action (mempty :: (InstMap (E Pred)))
+runContext :: (Monad m, Functor m) => StateT S m r -> m (r, S)
+runContext action = runStateT action (S mempty mempty)
