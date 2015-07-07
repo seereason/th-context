@@ -3,6 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Language.Haskell.TH.Context
     ( InstMap
+    , DecStatus(Declared, Undeclared)
     , tellInstance
     , reifyInstancesWithContext
     , runContext
