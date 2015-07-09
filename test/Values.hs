@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Values where
 
@@ -63,7 +65,11 @@ arrayInstances =
                 "instance IArray UArray Word8"]
 
 class MyClass a
+class MyMPClass a b
 data Wrapper a = Wrapper a
 
 instance MyClass Int
 instance MyClass a => MyClass (Wrapper a)
+
+instance MyMPClass a Int
+instance MyMPClass a b => MyMPClass a (Wrapper b)

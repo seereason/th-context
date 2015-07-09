@@ -99,4 +99,10 @@ tests = do
           `shouldBe` (["instance MyClass a => MyClass (Wrapper a)"],
                       [("MyClass (Wrapper Int)",["Declared (instance MyClass a => MyClass (Wrapper a))"]),
                        ("MyClass Int",["Declared (instance MyClass Int)"])])
+  it "handles a multi param wrapper instance" $
+     $(do (insts, s) <- runContext (reifyInstancesWithContext ''MyMPClass [VarT (mkName "a"), AppT (ConT ''Wrapper) (ConT ''Int)])
+          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred (view instMap s)))))
+          `shouldBe` (["instance MyMPClass a b => MyMPClass a (Wrapper b)"],
+                      [("MyMPClass a (Wrapper Int)",["Declared (instance MyMPClass a b => MyMPClass a (Wrapper b))"]),
+                       ("MyMPClass a Int",["Declared (instance MyMPClass a Int)"])])
 #endif
