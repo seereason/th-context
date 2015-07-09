@@ -5,17 +5,18 @@
 module Context where
 
 import Control.DeepSeq
+import Control.Lens (view)
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Bits
 import Data.List as List (map, null)
 import Data.Map as Map (Map, map, mapKeys, toList, fromList)
-import Data.Set as Set (Set, fromList)
+import Data.Set as Set (fromList, map, Set)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (reifyInstancesWithContext, runContext)
+import Language.Haskell.TH.Context (instMap, reifyInstancesWithContext, runContext)
 import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.TypeGraph.Expand (expandType, runExpanded)
-import Language.Haskell.TH.TypeGraph.Core (pprint')
+import Language.Haskell.TH.TypeGraph (pprint')
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
 import System.Exit (ExitCode)
@@ -85,10 +86,17 @@ tests = do
                            Map.map Set.fromList (Map.fromList pairs)))
              -- Unquote the template haskell Q monad expression
              $(do -- Run instances and save the result and the state monad result
-                  (insts, mp) <- runContext (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")])
+                  (insts, s) <- runContext (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")])
                   -- Convert to lists of text so we can lift out of Q
-                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys pprintPred mp))))
+                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred (view instMap s)))))
           `shouldBe` (noDifferences,
                       -- I don't think this is right
-                      Map.fromList [{-("Data.Array.Base.IArray Data.Array.Base.UArray a", arrayInstances)-}] :: Map String (Set String))
+                      Map.fromList [("IArray UArray a", Set.map (\ x -> "Declared (" ++ x ++ ")") arrayInstances)] :: Map String (Set String))
+
+  it "handles a wrapper instance" $
+     $(do (insts, s) <- runContext (reifyInstancesWithContext ''MyClass [AppT (ConT ''Wrapper) (ConT ''Int)])
+          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred (view instMap s)))))
+          `shouldBe` (["instance MyClass a => MyClass (Wrapper a)"],
+                      [("MyClass (Wrapper Int)",["Declared (instance MyClass a => MyClass (Wrapper a))"]),
+                       ("MyClass Int",["Declared (instance MyClass Int)"])])
 #endif

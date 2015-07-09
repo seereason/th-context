@@ -9,7 +9,7 @@ import Data.Set as Set (Set, empty, fromList, toList, union)
 import GHC.Prim -- ByteArray#, Char#, etc
 import Language.Haskell.TH
 import Language.Haskell.TH.TypeGraph.Expand (E(E), expandType, markExpanded)
-import Language.Haskell.TH.TypeGraph.Core (typeArity)
+import Language.Haskell.TH.TypeGraph (typeArity)
 import Language.Haskell.TH.TypeGraph.Monad (typeGraphEdges)
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
@@ -44,5 +44,26 @@ enumInstances =
 
 arrayInstances :: Set String
 arrayInstances =
-  Set.fromList
-    ["instance IArray UArray (FunPtr a)","instance IArray UArray (Ptr a)","instance IArray UArray (StablePtr a)","instance IArray UArray Bool","instance IArray UArray Char","instance IArray UArray Double","instance IArray UArray Float","instance IArray UArray Int","instance IArray UArray Int16","instance IArray UArray Int32","instance IArray UArray Int64","instance IArray UArray Int8","instance IArray UArray Word","instance IArray UArray Word16","instance IArray UArray Word32","instance IArray UArray Word64","instance IArray UArray Word8"]
+  Set.fromList ["instance IArray UArray (FunPtr a)",
+                "instance IArray UArray (Ptr a)",
+                "instance IArray UArray (StablePtr a)",
+                "instance IArray UArray Bool",
+                "instance IArray UArray Char",
+                "instance IArray UArray Double",
+                "instance IArray UArray Float",
+                "instance IArray UArray Int",
+                "instance IArray UArray Int16",
+                "instance IArray UArray Int32",
+                "instance IArray UArray Int64",
+                "instance IArray UArray Int8",
+                "instance IArray UArray Word",
+                "instance IArray UArray Word16",
+                "instance IArray UArray Word32",
+                "instance IArray UArray Word64",
+                "instance IArray UArray Word8"]
+
+class MyClass a
+data Wrapper a = Wrapper a
+
+instance MyClass Int
+instance MyClass a => MyClass (Wrapper a)

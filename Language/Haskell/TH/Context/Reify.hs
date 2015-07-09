@@ -46,6 +46,7 @@ import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
+import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 import Language.Haskell.TH.TypeGraph (E, expandPred, expandClassP, pprint', runExpanded, TypeGraphVertex)
@@ -54,6 +55,10 @@ type InstMap = Map (E Pred) [DecStatus InstanceDec]
 
 -- | Did we get this instance from the Q monad or does it still need to be spliced?
 data DecStatus a = Declared {instanceDec :: a} | Undeclared {instanceDec :: a} deriving Show
+
+instance Ppr a => Ppr (DecStatus a) where
+    ppr (Undeclared x) = cat [ptext "Undeclared (", ppr x, ptext ")"]
+    ppr (Declared x) = cat [ptext "Declared (", ppr x, ptext ")"]
 
 class HasSet a m where
     getSet :: m (Set a)
@@ -89,13 +94,18 @@ reifyInstancesWithContext className typeParameters = do
            -- Add an entry with a bogus value to limit recursion on
            -- the predicate we are currently testing
            instMap %= Map.insert p []
+           -- mp' <- use instMap
+           -- trace (" Map.insert 1 (" ++ pprint' p ++ ") size=" ++ show (Map.size mp')) (return ())
            -- Get all the instances of className that unify with the type parameters.
            insts <- qReifyInstances className typeParameters
+           -- trace (" qReifyInstances " ++ pprint' className ++ " " ++ pprint' typeParameters ++ " -> " ++ pprint' insts) (return ())
            -- Filter out the ones that conflict with the instance context
            r <- filterM (testInstance className typeParameters) insts
            -- Now insert the correct value into the map and return it.
            instMap %= Map.insert p (map Declared r)
-           y <- Map.lookup p <$> use instMap
+           -- y <- Map.lookup p <$> use instMap
+           -- mp'' <- use instMap
+           -- trace (" Map.insert 2 (" ++ pprint' p ++ ") [" ++ maybe "Nothing" pprint' y ++ "] size=" ++ show (Map.size mp'')) (return ())
            return r
 
 -- | Test one of the instances returned by qReifyInstances against the
@@ -235,7 +245,9 @@ tellInstance inst@(InstanceD _ instanceType _) =
        mp <- use instMap
        case Map.lookup p mp of
          Just (_ : _) -> return ()
-         _ -> instMap %= Map.insert p [Undeclared inst] -- There is no point associating multiple instances with a predicate, it is a compile error
+         _ -> do instMap %= Map.insert p [Undeclared inst] -- There is no point associating multiple instances with a predicate, it is a compile error
+                 -- z <- Map.lookup p <$> use instMap
+                 -- trace (" Map.insert 3 (" ++ pprint' p ++ ") [" ++ maybe "Nothing" pprint' z ++ "]") (return ())
 tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint' inst
 
 unfoldInstance :: Type -> Maybe (Name, [Type])
@@ -255,7 +267,7 @@ runContext action = runStateT action (S mempty mempty)
 -- | Typical use: run state monads to generate a list of instance
 -- declarations.
 execContext :: (Monad m, Functor m) => StateT S m () -> m [Dec]
-execContext action = (mapMaybe undeclared . f) <$> runContext action
+execContext action = {- trace "EXECCONTEXT" (return ()) >> -} (mapMaybe undeclared . f) <$> runContext action
     where
       f :: (r, S) -> [DecStatus Dec]
       f (_, S {_instMap = mp}) = concat (Map.elems mp)
