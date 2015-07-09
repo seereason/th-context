@@ -120,7 +120,7 @@ testInstance className typeParameters (InstanceD instanceContext instanceType _)
   mapM expandPred (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext . map runExpanded
     where
       instancePredicates :: [Type] -> Type -> [Pred]
-#if MIN_VERSION_template_haskell(2,10,0)
+#if __GLASGOW_HASKELL__ >= 709
       instancePredicates (x : xs) (AppT l r) = AppT (AppT EqualityT x) r : instancePredicates xs l
 #else
       instancePredicates (x : xs) (AppT l r) = EqualP x r : instancePredicates xs l
@@ -152,7 +152,7 @@ simplifyContext context =
 -- | Try to simplify the context by eliminating of one of the predicates.
 -- If we succeed start again with the new context.
 simplifyPredicate :: [Pred] -> Pred -> [Pred]
-#if MIN_VERSION_template_haskell(2,10,0)
+#if __GLASGOW_HASKELL__ >= 709
 simplifyPredicate context (AppT (AppT EqualityT v@(VarT _)) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
 simplifyPredicate context (AppT (AppT EqualityT a) v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
 simplifyPredicate context p@(AppT (AppT EqualityT a) b) | a == b = filter (/= p) context
@@ -185,7 +185,7 @@ testContextWithState context = do
 -- | Unify the two arguments of an EqualP predicate, return a list of
 -- simpler predicates associating types with a variables.
 unify :: Pred -> [Pred]
-#if MIN_VERSION_template_haskell(2,10,0)
+#if __GLASGOW_HASKELL__ >= 709
 unify (AppT (AppT EqualityT (AppT a b)) (AppT c d)) = unify (AppT (AppT EqualityT a) c) ++ unify (AppT (AppT EqualityT b) d)
 unify (AppT (AppT EqualityT (ConT a)) (ConT b)) | a == b = []
 unify (AppT (AppT EqualityT a@(VarT _)) b) = [AppT (AppT EqualityT a) b]
@@ -202,7 +202,7 @@ unify x = [x]
 -- context.  Use recursive calls to qReifyInstancesWithContext when
 -- we encounter a class name applied to a list of type parameters.
 consistent :: (DsMonad m, MonadState S m) => Pred -> m Bool
-#if MIN_VERSION_template_haskell(2,10,0)
+#if __GLASGOW_HASKELL__ >= 709
 consistent typ
     | isJust (unfoldInstance typ) =
         let Just (className, typeParameters) = unfoldInstance typ in
@@ -237,7 +237,7 @@ tellInstance :: (DsMonad m, MonadState S m, Quasi m) =>
                 Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
-#if MIN_VERSION_template_haskell(2,10,0)
+#if __GLASGOW_HASKELL__ >= 709
        p <- expandPred $ foldl AppT (ConT className) typeParameters
 #else
        p <- expandPred $ ClassP className typeParameters
