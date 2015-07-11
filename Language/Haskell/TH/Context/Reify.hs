@@ -49,7 +49,9 @@ import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
-import Language.Haskell.TH.TypeGraph (E, expandPred, expandClassP, pprint', runExpanded, TypeGraphVertex)
+import Language.Haskell.TH.TypeGraph.Expand (E, expandPred, expandClassP, runExpanded)
+import Language.Haskell.TH.TypeGraph.Shape (pprint')
+import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex)
 
 type InstMap = Map (E Pred) [DecStatus InstanceDec]
 
