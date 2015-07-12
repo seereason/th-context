@@ -8,9 +8,9 @@ import Data.Set as Set (Set, difference, empty, fromList, null, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared))
-import Language.Haskell.TH.TypeGraph.Shape (pprint')
+import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
 import Language.Haskell.TH.TypeGraph.Expand (E, markExpanded, runExpanded)
-import Language.Haskell.TH.TypeGraph.Graph (GraphEdges)
+import Language.Haskell.TH.TypeGraph.Shape (pprint')
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
 
 import Language.Haskell.TH.Syntax (Lift(lift))

@@ -16,7 +16,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Context (instMap, reifyInstancesWithContext, runContext)
 import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.TypeGraph.Expand (expandType, runExpanded)
-import Language.Haskell.TH.TypeGraph (pprint')
+import Language.Haskell.TH.TypeGraph.Shape (pprint')
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
 import System.Exit (ExitCode)
