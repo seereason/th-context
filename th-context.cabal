@@ -54,6 +54,7 @@ library
       Language.Haskell.TH.TypeGraph.Free
       Language.Haskell.TH.TypeGraph.Graph
       Language.Haskell.TH.TypeGraph.Info
+      Language.Haskell.TH.TypeGraph.Prelude
       Language.Haskell.TH.TypeGraph.Shape
       Language.Haskell.TH.TypeGraph.Stack
       Language.Haskell.TH.TypeGraph.Unsafe

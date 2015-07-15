@@ -24,7 +24,6 @@ module Language.Haskell.TH.Context.Reify
     , evalContext
     , execContext
     , runContext
-    , HasSet(getSet, modifySet)
     , S
     , instMap
     , visited
@@ -50,7 +49,7 @@ import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 import Language.Haskell.TH.TypeGraph.Expand (E, expandPred, expandClassP, runExpanded)
-import Language.Haskell.TH.TypeGraph.Shape (pprint')
+import Language.Haskell.TH.TypeGraph.Prelude (HasSet(getSet, modifySet), pprint')
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex)
 
 type InstMap = Map (E Pred) [DecStatus InstanceDec]
@@ -61,10 +60,6 @@ data DecStatus a = Declared {instanceDec :: a} | Undeclared {instanceDec :: a} d
 instance Ppr a => Ppr (DecStatus a) where
     ppr (Undeclared x) = cat [ptext "Undeclared (", ppr x, ptext ")"]
     ppr (Declared x) = cat [ptext "Declared (", ppr x, ptext ")"]
-
-class HasSet a m where
-    getSet :: m (Set a)
-    modifySet :: (Set a -> Set a) -> m ()
 
 data S
     = S { _instMap :: InstMap

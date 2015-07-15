@@ -10,7 +10,6 @@ module Language.Haskell.TH.Context
     , execContext
     , evalContext
     , S
-    , HasSet(..)
     , instMap
     , visited
     ) where
