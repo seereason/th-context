@@ -50,7 +50,7 @@ import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 import Language.Haskell.TH.TypeGraph.Expand (E, expandPred, expandClassP, runExpanded)
 import Language.Haskell.TH.TypeGraph.Prelude (HasSet(getSet, modifySet), pprint')
-import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex)
+import Language.Haskell.TH.TypeGraph.Vertex (TGV)
 
 type InstMap = Map (E Pred) [DecStatus InstanceDec]
 
@@ -63,11 +63,11 @@ instance Ppr a => Ppr (DecStatus a) where
 
 data S
     = S { _instMap :: InstMap
-        , _visited :: Set TypeGraphVertex }
+        , _visited :: Set TGV }
 
 $(makeLenses ''S)
 
-instance Monad m => HasSet TypeGraphVertex (StateT S m) where
+instance Monad m => HasSet TGV (StateT S m) where
     getSet = use visited
     modifySet f = visited %= f
 

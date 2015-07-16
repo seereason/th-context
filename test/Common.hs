@@ -43,7 +43,7 @@ pprintDec' (Declared x) = "Declared (" ++ pprint' (unReify x) ++ ")"
 pprintType :: E Type -> String
 pprintType = pprint' . unReify . runExpanded
 
-pprintVertex :: TypeGraphVertex -> String
+pprintVertex :: (Ppr v, TypeGraphVertex v) => v -> String
 pprintVertex = pprint'
 
 pprintPred :: E Pred -> String
