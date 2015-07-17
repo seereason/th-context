@@ -19,11 +19,6 @@ description:        Use these functions to decide an a not-quite naive fashion
                     when computing the context.
 extra-source-files: test/Common.hs test/Context.hs test/Tests.hs test/Values.hs
 
-flag local-th-typegraph
-  Description: Link to local source repo for the th-typegraph package
-  Default: False
-  Manual: True
-
 library
   hs-source-dirs: .
   build-depends:
@@ -36,28 +31,13 @@ library
     syb,
     template-haskell >= 2.10,
     th-desugar,
-    th-orphans >= 0.10.0
+    th-orphans >= 0.10.0,
+    th-typegraph >= 0.21
   ghc-options:      -Wall
   exposed-modules:  Language.Haskell.TH.Context,
                     Language.Haskell.TH.Context.Reify,
                     Language.Haskell.TH.Context.Simple
   default-language: Haskell2010
-  if flag(local-th-typegraph)
-    hs-source-dirs: th-typegraph
-    build-depends: set-extra
-    exposed-modules:
-      Language.Haskell.TH.TypeGraph.Edges
-      Language.Haskell.TH.TypeGraph.Expand
-      Language.Haskell.TH.TypeGraph.Free
-      Language.Haskell.TH.TypeGraph.Graph
-      Language.Haskell.TH.TypeGraph.Info
-      Language.Haskell.TH.TypeGraph.Prelude
-      Language.Haskell.TH.TypeGraph.Shape
-      Language.Haskell.TH.TypeGraph.Stack
-      Language.Haskell.TH.TypeGraph.Unsafe
-      Language.Haskell.TH.TypeGraph.Vertex
-  else
-    build-depends: th-typegraph >= 0.21
 
 test-suite th-context-tests
   type:             exitcode-stdio-1.0
@@ -65,10 +45,8 @@ test-suite th-context-tests
   main-is:          Tests.hs
   build-depends:    array, base, bytestring, containers, deepseq, ghc-prim,
                     hspec, hspec-core, lens, mtl, syb, template-haskell, text,
-                    th-context, th-desugar, th-orphans, th-reify-many
+                    th-context, th-desugar, th-orphans, th-reify-many, th-typegraph >= 0.21
   default-language: Haskell2010
-  if !flag(local-th-typegraph)
-    build-depends: th-typegraph >= 0.21
 
 source-repository head
   type:     git
