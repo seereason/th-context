@@ -267,8 +267,8 @@ runContext action = runStateT action (S mempty mempty)
 
 -- | Typical use: run state monads to generate a list of instance
 -- declarations.
-execContext :: (Monad m, Functor m) => StateT S m () -> m [Dec]
-execContext action = (mapMaybe undeclared . f) <$> runContext action
+execContext :: (Monad m, Functor m, MonadWriter [Dec] m) => StateT S m () -> m ()
+execContext action = runContext action >>= tell . mapMaybe undeclared . f
     where
       f :: (r, S) -> [DecStatus Dec]
       f (_, S {_instMap = mp}) = concat (Map.elems mp)
