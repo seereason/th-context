@@ -45,18 +45,20 @@ import Control.Monad (filterM)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (MonadState, StateT, evalStateT, runStateT)
 import Control.Monad.Writer (MonadWriter, tell)
+import Data.Function.Memoize (memoize2)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (elems, insert, lookup, Map)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
+-- import Debug.Trace (trace)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad(localDeclarations))
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 import Language.Haskell.TH.TypeGraph.Expand (E, expandPred, expandClassP, runExpanded)
-import Language.Haskell.TH.TypeGraph.Prelude (HasSet(getSet, modifySet), pprint')
+import Language.Haskell.TH.TypeGraph.Prelude (HasSet(getSet, modifySet), pprint' {-, L(L)-})
 import Language.Haskell.TH.TypeGraph.Vertex (TGV)
 
 -- FIXME: Should actually be Map (E Pred) (Maybe (DecStatus
@@ -100,12 +102,13 @@ instance Monad m => HasSet TGV (StateT S m) where
 -- associate instances with the predicate.
 reifyInstancesWithContext :: forall m. (DsMonad m, MonadState S m) =>
                              Name -> [Type] -> m [InstanceDec]
-reifyInstancesWithContext className typeParameters = do
+reifyInstancesWithContext = memoize2 $ \ className typeParameters -> do
        p <- expandClassP className typeParameters :: m (E Pred)
        mp <- use instMap
        case Map.lookup p mp of
          Just x -> return $ map instanceDec x
          Nothing -> do
+           -- trace ("        -> reifyInstancesWithContext " ++ pprint' (foldInstance className typeParameters) ++ "...") (return ())
            -- Add an entry with a bogus value to limit recursion on
            -- the predicate we are currently testing
            instMap %= Map.insert p []
@@ -115,6 +118,7 @@ reifyInstancesWithContext className typeParameters = do
            r <- filterM (testInstance className typeParameters) insts
            -- Now insert the correct value into the map and return it.
            instMap %= Map.insert p (map Declared r)
+           -- trace ("        <- reifyInstancesWithContext " ++ pprint' (foldInstance className typeParameters) ++ " -> " ++ pprint' (L r)) (return ())
            return r
 
 -- | Test one of the instances returned by qReifyInstances against the
