@@ -9,6 +9,8 @@ module Language.Haskell.TH.Context
     , runContext
     , execContext
     , evalContext
+    , evalContext_
+    , tellUndeclared
     , S
     , instMap
     , visited

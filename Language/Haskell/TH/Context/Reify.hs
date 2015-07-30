@@ -16,18 +16,22 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 module Language.Haskell.TH.Context.Reify
-    ( InstMap
-    , DecStatus(Declared, Undeclared)
-    , reifyInstancesWithContext
-    , tellInstance
-    -- * State monad runners
-    , evalContext
-    , execContext
-    , runContext
+    (
     -- * State type and lenses
-    , S
+      S
     , instMap
     , visited
+    , InstMap
+    , DecStatus(Declared, Undeclared)
+    -- * Reify
+    , reifyInstancesWithContext
+    , tellInstance
+    -- * Monad runners
+    , runContext
+    , evalContext
+    , evalContext_
+    , execContext
+    , tellUndeclared
     ) where
 
 #if __GLASGOW_HASKELL__ < 709
@@ -259,19 +263,32 @@ unfoldInstance _ = Nothing
 foldInstance :: Name -> [Type] -> Pred
 foldInstance className typeParameters = foldl AppT (ConT className) typeParameters
 
-evalContext :: Monad m => StateT S m r -> m r
-evalContext action = evalStateT action (S mempty mempty)
-
-runContext :: (Monad m, Functor m) => StateT S m r -> m (r, S)
+runContext :: Monad m => StateT S m r -> m (r, S)
 runContext action = runStateT action (S mempty mempty)
 
--- | Typical use: run state monads to generate a list of instance
--- declarations.
-execContext :: (Monad m, Functor m, MonadWriter [Dec] m) => StateT S m () -> m ()
-execContext action = runContext action >>= tell . mapMaybe undeclared . f
+-- | Run the action, tell the undeclared instances to the writer
+-- monad, and return the result.
+evalContext :: MonadWriter [Dec] m => StateT S m r -> m r
+evalContext action = do
+  (r, s) <- runContext action
+  tellUndeclared s
+  return r
+
+-- | Run the action, discard the undeclared instances, and return the
+-- result.
+evalContext_ :: Monad m => StateT S m r -> m r
+evalContext_ action = evalStateT action (S mempty mempty)
+
+-- | Run the action and tell the undeclared instances to the writer
+-- monad.
+execContext :: MonadWriter [Dec] m => StateT S m () -> m ()
+execContext action = runContext action >>= tellUndeclared . snd
+
+-- | Tell the the instances that were added to the context (not the
+-- ones that were discovered by reifyInstances) to the writer monad.
+tellUndeclared :: MonadWriter [Dec] m => S -> m ()
+tellUndeclared = tell . mapMaybe undeclared . concat . Map.elems . _instMap
     where
-      f :: (r, S) -> [DecStatus Dec]
-      f (_, S {_instMap = mp}) = concat (Map.elems mp)
       undeclared :: DecStatus Dec -> Maybe Dec
       undeclared (Undeclared dec) = Just dec
       undeclared (Declared _) = Nothing
