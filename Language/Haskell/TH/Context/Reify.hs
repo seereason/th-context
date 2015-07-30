@@ -38,14 +38,16 @@ import Data.Maybe (isJust)
 #endif
 import Control.Lens
 import Control.Monad (filterM)
+import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (MonadState, StateT, evalStateT, runStateT)
+import Control.Monad.Writer (MonadWriter, tell)
 import Data.Generics (everywhere, mkT)
 import Data.List ({-dropWhileEnd,-} intercalate)
 import Data.Map as Map (elems, insert, lookup, Map)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Language.Haskell.TH
-import Language.Haskell.TH.Desugar as DS (DsMonad)
+import Language.Haskell.TH.Desugar as DS (DsMonad(localDeclarations))
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
@@ -75,6 +77,9 @@ data S
         , _visited :: Set TGV }
 
 $(makeLenses ''S)
+
+instance Quasi m => DsMonad (ReaderT S m) where
+    localDeclarations = view instMap >>= return . map instanceDec . concat . Map.elems
 
 instance Monad m => HasSet TGV (StateT S m) where
     getSet = use visited
