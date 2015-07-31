@@ -5,19 +5,19 @@
 module Context where
 
 import Control.DeepSeq
-import Control.Lens (view)
+import Control.Monad.State (runStateT)
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Bits
-import Data.List as List (map, null)
+import Data.List as List (map)
 import Data.Map as Map (Map, map, mapKeys, toList, fromList)
 import Data.Set as Set (fromList, map, Set)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (instMap, reifyInstancesWithContext, runContext)
-import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
+import Language.Haskell.TH.Context (reifyInstancesWithContext, expandType)
+-- import Language.Haskell.TH.Context.S (S(S), instMap)
+-- import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
-import Language.Haskell.TH.TypeGraph.Expand (expandType, runExpanded)
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
@@ -36,7 +36,7 @@ tests = do
   it "expands types as expected" $ do
      (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |], [t|Maybe (Maybe [Char])|] ])
      let expanded = $(withLocalDeclarations [] (do types <- runQ (sequence [ [t|String|], [t|Maybe String|], [t|Maybe (Maybe String)|] ]) >>= mapM expandType
-                                                   runQ . lift $ (List.map runExpanded types)))
+                                                   runQ . lift $ types))
      expanded `shouldBe` expected
 
   -- Test the behavior of th-reify-many
@@ -47,7 +47,7 @@ tests = do
   it "can tell that there is no instance NFData ExitCode" $
      $(do insts <- qReifyInstances ''NFData [ConT ''ExitCode]
           lift $ List.map pprint' insts) `shouldBe` ([] :: [String])
-
+{-
   it "can tell that an instance hasn't been declared" $
      $(missingInstances simpleMissingInstanceTest [d|instance NFData ExitCode|] >>= lift . List.null)
           `shouldBe` False
@@ -55,14 +55,14 @@ tests = do
   it "can tell that an instance has been declared" $
      $(missingInstances simpleMissingInstanceTest [d|instance NFData Char|] >>= lift . List.null)
           `shouldBe` True
-
+-}
 -- GHCs older than 7.10 that haven't been specially patched cannot deal with
 -- the unbound type variable a.
 #if __GLASGOW_HASKELL__ >= 709 || defined(PATCHED_FOR_TRAC_9262)
   -- Doesn't actually use any th-context functions, but it tests
   -- for trac 9262.
   it "Is using a ghc without bug https://ghc.haskell.org/trac/ghc/ticket/9262 (i.e. either 7.10 or a custom patched ghc)" $ do
-     $(do insts <- qReifyInstances ''Eq [ListT `AppT` VarT (mkName "a")]
+     $(do _insts <- qReifyInstances ''Eq [ListT `AppT` VarT (mkName "a")]
           -- runIO $ putStrLn (pprint insts)
           lift "ok")
          `shouldBe` "ok"
@@ -86,22 +86,22 @@ tests = do
                            Map.map Set.fromList (Map.fromList pairs)))
              -- Unquote the template haskell Q monad expression
              $(do -- Run instances and save the result and the state monad result
-                  (insts, s) <- runContext (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")])
+                  (insts, s) <- runStateT (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")]) mempty
                   -- Convert to lists of text so we can lift out of Q
-                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred (view instMap s)))))
+                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred s))))
           `shouldBe` (noDifferences,
                       -- I don't think this is right
                       Map.fromList [("IArray UArray a", Set.map (\ x -> "Declared (" ++ x ++ ")") arrayInstances)] :: Map String (Set String))
 
   it "handles a wrapper instance" $
-     $(do (insts, s) <- runContext (reifyInstancesWithContext ''MyClass [AppT (ConT ''Wrapper) (ConT ''Int)])
-          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred (view instMap s)))))
+     $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyClass [AppT (ConT ''Wrapper) (ConT ''Int)]) mempty
+          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred s))))
           `shouldBe` (["instance MyClass a => MyClass (Wrapper a)"],
                       [("MyClass (Wrapper Int)",["Declared (instance MyClass a => MyClass (Wrapper a))"]),
                        ("MyClass Int",["Declared (instance MyClass Int)"])])
   it "handles a multi param wrapper instance" $
-     $(do (insts, s) <- runContext (reifyInstancesWithContext ''MyMPClass [VarT (mkName "a"), AppT (ConT ''Wrapper) (ConT ''Int)])
-          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred (view instMap s)))))
+     $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyMPClass [VarT (mkName "a"), AppT (ConT ''Wrapper) (ConT ''Int)]) mempty
+          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys pprintPred s))))
           `shouldBe` (["instance MyMPClass a b => MyMPClass a (Wrapper b)"],
                       [("MyMPClass a (Wrapper Int)",["Declared (instance MyMPClass a b => MyMPClass a (Wrapper b))"]),
                        ("MyMPClass a Int",["Declared (instance MyMPClass a Int)"])])

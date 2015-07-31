@@ -1,24 +1,21 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, TemplateHaskell #-}
 module Common where
 
-import Data.List as List (intercalate, map)
-import Data.Map as Map (Map, fromList, toList)
-import Data.Monoid ((<>))
-import Data.Set as Set (Set, difference, empty, fromList, null, toList)
+import Data.List as List (map)
+import Data.Map as Map (toList)
+import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared))
 import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
-import Language.Haskell.TH.TypeGraph.Expand (E, markExpanded, runExpanded)
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
-
-import Language.Haskell.TH.Syntax (Lift(lift))
 
 data SetDifferences a = SetDifferences {unexpected :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
 
 setDifferences :: Ord a => Set a -> Set a -> SetDifferences a
 setDifferences actual expected = SetDifferences {unexpected = Set.difference actual expected, missing = Set.difference expected actual}
+noDifferences :: SetDifferences a
 noDifferences = SetDifferences {unexpected = Set.empty, missing = Set.empty}
 
 unReify :: Data a => a -> a
@@ -40,14 +37,14 @@ pprintDec' :: DecStatus Dec -> String
 pprintDec' (Undeclared x) = "Undeclared (" ++ pprint' (unReify x) ++ ")"
 pprintDec' (Declared x) = "Declared (" ++ pprint' (unReify x) ++ ")"
 
-pprintType :: E Type -> String
-pprintType = pprint' . unReify . runExpanded
+pprintType :: Type -> String
+pprintType = pprint' . unReify
 
 pprintVertex :: (Ppr v, TypeGraphVertex v) => v -> String
 pprintVertex = pprint'
 
-pprintPred :: E Pred -> String
-pprintPred = pprint' . unReify . runExpanded
+pprintPred :: Pred -> String
+pprintPred = pprint' . unReify
 
-edgesToStrings :: (Ppr hint, Ppr key) => GraphEdges hint key -> [(String, (String, [String]))]
-edgesToStrings mp = List.map (\ (t, (h, ts)) -> (pprint' t, (pprint' h, map pprint' (Set.toList ts)))) (Map.toList mp)
+edgesToStrings :: Ppr key => GraphEdges key -> [(String, [String])]
+edgesToStrings mp = List.map (\ (t, ts) -> (pprint' t, map pprint' (Set.toList ts))) (Map.toList mp)

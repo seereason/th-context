@@ -4,23 +4,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Values where
 
-import Control.Monad (filterM)
-import Data.Map as Map (Map, fromList, toList)
-import Data.Ratio (Ratio)
-import Data.Set as Set (Set, empty, fromList, toList, union)
-import GHC.Prim -- ByteArray#, Char#, etc
-import Language.Haskell.TH
-import Language.Haskell.TH.TypeGraph.Edges (typeGraphEdges)
-import Language.Haskell.TH.TypeGraph.Expand (E(E), expandType, markExpanded)
-import Language.Haskell.TH.TypeGraph.Free (typeArity)
-import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
-import Language.Haskell.TH.Desugar (withLocalDeclarations)
+import Data.Set as Set (Set, fromList)
 import Language.Haskell.TH.Instances ()
-import Language.Haskell.TH.Syntax
-import Test.Hspec hiding (runIO)
-import Test.Hspec.Core.Spec (SpecM)
-
-import Common
 
 bitsInstances :: Set String
 bitsInstances =
