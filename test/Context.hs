@@ -58,7 +58,6 @@ tests = do
 -}
 -- GHCs older than 7.10 that haven't been specially patched cannot deal with
 -- the unbound type variable a.
-#if __GLASGOW_HASKELL__ >= 709 || defined(PATCHED_FOR_TRAC_9262)
   -- Doesn't actually use any th-context functions, but it tests
   -- for trac 9262.
   it "Is using a ghc without bug https://ghc.haskell.org/trac/ghc/ticket/9262 (i.e. either 7.10 or a custom patched ghc)" $ do
@@ -105,4 +104,3 @@ tests = do
           `shouldBe` (["instance MyMPClass a b => MyMPClass a (Wrapper b)"],
                       [("MyMPClass a (Wrapper Int)",["Declared (instance MyMPClass a b => MyMPClass a (Wrapper b))"]),
                        ("MyMPClass a Int",["Declared (instance MyMPClass a Int)"])])
-#endif
