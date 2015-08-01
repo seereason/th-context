@@ -19,7 +19,7 @@ import Language.Haskell.TH.Context (reifyInstancesWithContext, expandType)
 -- import Language.Haskell.TH.Context.Simple (missingInstances, simpleMissingInstanceTest)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
-import Language.Haskell.TH.TypeGraph.Expand (E(unE))
+import Language.Haskell.TH.TypeGraph.Expand (E(unE), ExpandMap)
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
@@ -37,7 +37,7 @@ tests = do
   -- String becomes [Char], Maybe String becomes Maybe [Char], Maybe (Maybe String) becomes Maybe (Maybe [Char])
   it "expands types as expected" $ do
      (expected :: [Type]) <- runQ (sequence [ [t| [Char] |], [t|Maybe [Char] |], [t|Maybe (Maybe [Char])|] ])
-     let actual = $(withLocalDeclarations [] $ flip evalStateT (Map.empty :: Map Type (E Type)) $
+     let actual = $(withLocalDeclarations [] $ flip evalStateT (Map.empty :: ExpandMap) $
                     do (types :: [Type]) <- runQ (sequence [ [t|String|], [t|Maybe String|], [t|Maybe (Maybe String)|] ]) >>= mapM expandType >>= return . List.map unE
                        runQ . lift $ types)
      actual `shouldBe` expected

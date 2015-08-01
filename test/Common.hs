@@ -4,13 +4,13 @@ module Common where
 import Control.Lens ((%=), makeLenses, use)
 import Control.Monad.State (evalStateT, StateT)
 import Data.List as List (map)
-import Data.Map as Map (Map, toList)
+import Data.Map as Map (toList)
 import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
 import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared), InstMap)
 import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
-import Language.Haskell.TH.TypeGraph.Expand (E)
+import Language.Haskell.TH.TypeGraph.Expand (ExpandMap)
 import Language.Haskell.TH.TypeGraph.HasState (HasState(getState, modifyState))
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..), TGV)
@@ -56,7 +56,7 @@ edgesToStrings mp = List.map (\ (t, ts) -> (pprint' t, map pprint' (Set.toList t
 data S
     = S { _instMap :: InstMap
         , _visited :: Set TGV
-        , _expanded :: Map Type (E Type) }
+        , _expanded :: ExpandMap }
 
 $(makeLenses ''S)
 
@@ -64,7 +64,7 @@ instance Monad m => HasState InstMap (StateT S m) where
     getState = use instMap
     modifyState f = instMap %= f
 
-instance Monad m => HasState (Map Type (E Type)) (StateT S m) where
+instance Monad m => HasState ExpandMap (StateT S m) where
     getState = use expanded
     modifyState f = expanded %= f
 

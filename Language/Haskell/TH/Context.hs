@@ -34,10 +34,10 @@ import Data.Map as Map (elems, insert, lookup, Map)
 import Data.Maybe (mapMaybe)
 -- import Debug.Trace (trace)
 import Language.Haskell.TH
-import Language.Haskell.TH.Desugar as DS (DsMonad, dsType, expand, typeToTH)
+import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.TH.TypeGraph.Expand (expandType, E(unE))
+import Language.Haskell.TH.TypeGraph.Expand (ExpandMap, expandType, E(unE))
 import Language.Haskell.TH.TypeGraph.HasState (HasState(getState, modifyState))
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
@@ -67,7 +67,7 @@ instance Ppr a => Ppr (DecStatus a) where
 -- monad 'InstMap', associated with an empty list of predicates, and the
 -- empty list is returned.  Later the caller can use 'tellInstance' to
 -- associate instances with the predicate.
-reifyInstancesWithContext :: forall m. (DsMonad m, HasState InstMap m, HasState (Map Type (E Type)) m) =>
+reifyInstancesWithContext :: forall m. (DsMonad m, HasState InstMap m, HasState ExpandMap m) =>
                              Name -> [Type] -> m [InstanceDec]
 reifyInstancesWithContext className typeParameters = do
   p <- expandType $ foldInstance className typeParameters
@@ -93,7 +93,7 @@ reifyInstancesWithContext className typeParameters = do
 -- context we have computed so far.  We have already added a ClassP predicate
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
-testInstance :: (DsMonad m, HasState InstMap m, HasState (Map Type (E Type)) m) => Name -> [Type] -> InstanceDec -> m Bool
+testInstance :: (DsMonad m, HasState InstMap m, HasState ExpandMap m) => Name -> [Type] -> InstanceDec -> m Bool
 testInstance className typeParameters (InstanceD instanceContext instanceType _) = do
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
@@ -114,7 +114,7 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- parameters with the instance type.  Are they consistent?  Find out
 -- using type synonym expansion, variable substitution, elimination of
 -- vacuous predicates, and unification.
-testContext :: (DsMonad m, HasState InstMap m, HasState (Map Type (E Type)) m) => [Pred] -> m Bool
+testContext :: (DsMonad m, HasState InstMap m, HasState ExpandMap m) => [Pred] -> m Bool
 testContext context =
     and <$> (simplifyContext context >>= mapM consistent)
 
@@ -146,7 +146,7 @@ unify x = [x]
 -- | Decide whether a predicate is consistent with the accumulated
 -- context.  Use recursive calls to reifyInstancesWithContext when
 -- we encounter a class name applied to a list of type parameters.
-consistent :: (DsMonad m, HasState InstMap m, HasState (Map Type (E Type)) m) => Pred -> m Bool
+consistent :: (DsMonad m, HasState InstMap m, HasState ExpandMap m) => Pred -> m Bool
 consistent typ
     | isJust (unfoldInstance typ) =
         let Just (className, typeParameters) = unfoldInstance typ in
@@ -164,7 +164,7 @@ consistent typ = error $ "Unexpected Pred: " ++ pprint typ
 -- this, the instance predicate (constructed from class name and type
 -- parameters) will be considered part of the context for subsequent
 -- calls to reifyInstancesWithContext.
-tellInstance :: (DsMonad m, HasState InstMap m, Quasi m, HasState (Map Type (E Type)) m) => Dec -> m ()
+tellInstance :: (DsMonad m, HasState InstMap m, Quasi m, HasState ExpandMap m) => Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
        p <- expandType $ foldInstance className typeParameters
@@ -194,16 +194,6 @@ tellUndeclared =
       undeclared :: DecStatus Dec -> Maybe Dec
       undeclared (Undeclared dec) = Just dec
       undeclared (Declared _) = Nothing
-
-#if 0
--- | Apply the th-desugar expand function to a 'Type'
-expandType :: DsMonad m  => Type -> m Type
-expandType typ =
-  do -- trace (" expandType " ++ pprint typ) (return ())
-     r <- DS.typeToTH <$> (DS.dsType typ >>= DS.expand)
-     -- trace (" expandType " ++ pprint typ ++ " -> " ++ pprint r) (return ())
-     return r
-#endif
 
 -- | Turn a type Name and a list of Type parameters into a Pred (which
 -- is now just a Type.)
