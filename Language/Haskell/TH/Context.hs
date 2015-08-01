@@ -21,7 +21,6 @@ module Language.Haskell.TH.Context
     , reifyInstancesWithContext
     , tellInstance
     , tellUndeclared
-    , expandType
     ) where
 
 import Data.Maybe (isJust)
