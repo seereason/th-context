@@ -1,15 +1,18 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, TemplateHaskell #-}
 module Common where
 
+import Control.Lens ((%=), makeLenses, use)
+import Control.Monad.State (evalStateT, StateT)
 import Data.List as List (map)
-import Data.Map as Map (toList)
+import Data.Map as Map (Map, toList)
 import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared))
+import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared), InstMap)
 import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
+import Language.Haskell.TH.TypeGraph.HasState (HasState(getState, modifyState))
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
-import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..))
+import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..), TGV)
 
 data SetDifferences a = SetDifferences {unexpected :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
 
@@ -48,3 +51,25 @@ pprintPred = pprint' . unReify
 
 edgesToStrings :: Ppr key => GraphEdges key -> [(String, [String])]
 edgesToStrings mp = List.map (\ (t, ts) -> (pprint' t, map pprint' (Set.toList ts))) (Map.toList mp)
+
+data S
+    = S { _instMap :: InstMap
+        , _visited :: Set TGV
+        , _expanded :: Map Type Type }
+
+$(makeLenses ''S)
+
+instance Monad m => HasState InstMap (StateT S m) where
+    getState = use instMap
+    modifyState f = instMap %= f
+
+instance Monad m => HasState (Map Type Type) (StateT S m) where
+    getState = use expanded
+    modifyState f = expanded %= f
+
+instance Monad m => HasState (Set TGV) (StateT S m) where
+    getState = use visited
+    modifyState f = visited %= f
+
+evalS :: Monad m => StateT S m a -> m a
+evalS action = evalStateT action (S mempty mempty mempty)
