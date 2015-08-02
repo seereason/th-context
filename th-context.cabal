@@ -28,6 +28,7 @@ Library
     haskell-src-exts,
     lens,
     mtl,
+    mtl-unleashed,
     syb,
     template-haskell >= 2.10,
     th-desugar,
