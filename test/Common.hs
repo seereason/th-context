@@ -1,8 +1,8 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, TemplateHaskell #-}
 module Common where
 
-import Control.Lens ((%=), makeLenses, use)
-import Control.Monad.State (evalStateT, StateT)
+import Control.Lens (makeLenses, use, (.=))
+import Control.Monad.States (evalStateT, MonadStates(get, put), StateT)
 import Data.List as List (map)
 import Data.Map as Map (toList)
 import Data.Set as Set (Set, difference, empty, toList)
@@ -11,7 +11,6 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared), InstMap)
 import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
 import Language.Haskell.TH.TypeGraph.Expand (ExpandMap)
-import Language.Haskell.TH.TypeGraph.HasState (HasState(getState, modifyState))
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..), TGV)
 
@@ -60,17 +59,17 @@ data S
 
 $(makeLenses ''S)
 
-instance Monad m => HasState InstMap (StateT S m) where
-    getState = use instMap
-    modifyState f = instMap %= f
+instance Monad m => MonadStates InstMap (StateT S m) where
+    get = use instMap
+    put s = instMap .= s
 
-instance Monad m => HasState ExpandMap (StateT S m) where
-    getState = use expanded
-    modifyState f = expanded %= f
+instance Monad m => MonadStates ExpandMap (StateT S m) where
+    get = use expanded
+    put s = expanded .= s
 
-instance Monad m => HasState (Set TGV) (StateT S m) where
-    getState = use visited
-    modifyState f = visited %= f
+instance Monad m => MonadStates (Set TGV) (StateT S m) where
+    get = use visited
+    put s = visited .= s
 
 evalS :: Monad m => StateT S m a -> m a
 evalS action = evalStateT action (S mempty mempty mempty)
