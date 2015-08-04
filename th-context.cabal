@@ -1,5 +1,5 @@
 name:               th-context
-version:            0.21
+version:            0.22
 cabal-version:      >= 1.10
 build-type:         Simple
 license:            BSD3
@@ -28,11 +28,12 @@ Library
     haskell-src-exts,
     lens,
     mtl,
+    mtl-unleashed >= 0.2.1,
     syb,
     template-haskell >= 2.10,
     th-desugar,
     th-orphans >= 0.10.0,
-    th-typegraph >= 0.26
+    th-typegraph >= 0.27
   ghc-options:      -Wall -O2
   exposed-modules:  Language.Haskell.TH.Context
   default-language: Haskell2010
@@ -53,6 +54,7 @@ test-suite th-context-tests
     hspec-core,
     lens,
     mtl,
+    mtl-unleashed,
     syb,
     template-haskell,
     text,
@@ -60,7 +62,7 @@ test-suite th-context-tests
     th-desugar,
     th-orphans,
     th-reify-many,
-    th-typegraph >= 0.26
+    th-typegraph >= 0.27
   default-language: Haskell2010
 
 source-repository head
