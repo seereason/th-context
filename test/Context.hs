@@ -90,20 +90,20 @@ tests = do
              $(do -- Run instances and save the result and the state monad result
                   (insts, s) <- runStateT (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")]) (S mempty mempty mempty)
                   -- Convert to lists of text so we can lift out of Q
-                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . unE) (view instMap s)))))
+                  lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . unE) (view instMap' s)))))
           `shouldBe` (noDifferences,
                       -- I don't think this is right
                       Map.fromList [("IArray UArray a", Set.map (\ x -> "Declared (" ++ x ++ ")") arrayInstances)] :: Map String (Set String))
 
   it "handles a wrapper instance" $
      $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyClass [AppT (ConT ''Wrapper) (ConT ''Int)]) (S mempty mempty mempty)
-          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . unE) (view instMap s)))))
+          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . unE) (view instMap' s)))))
           `shouldBe` (["instance MyClass a => MyClass (Wrapper a)"],
                       [("MyClass (Wrapper Int)",["Declared (instance MyClass a => MyClass (Wrapper a))"]),
                        ("MyClass Int",["Declared (instance MyClass Int)"])])
   it "handles a multi param wrapper instance" $
      $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyMPClass [VarT (mkName "a"), AppT (ConT ''Wrapper) (ConT ''Int)]) (S mempty mempty mempty)
-          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . unE) (view instMap s)))))
+          lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . unE) (view instMap' s)))))
           `shouldBe` (["instance MyMPClass a b => MyMPClass a (Wrapper b)"],
                       [("MyMPClass a (Wrapper Int)",["Declared (instance MyMPClass a b => MyMPClass a (Wrapper b))"]),
                        ("MyMPClass a Int",["Declared (instance MyMPClass a Int)"])])

@@ -1,16 +1,16 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, TemplateHaskell #-}
 module Common where
 
-import Control.Lens (makeLenses, use, (.=))
-import Control.Monad.States (evalStateT, MonadStates(get, put), StateT)
+import Control.Lens (makeClassy)
+import Control.Monad.State (evalStateT, StateT)
 import Data.List as List (map)
 import Data.Map as Map (toList)
 import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared), InstMap)
+import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared), InstMap, HasInstMap(instMap))
 import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
-import Language.Haskell.TH.TypeGraph.Expand (ExpandMap)
+import Language.Haskell.TH.TypeGraph.Expand (ExpandMap, HasExpandMap(expandMap))
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..), TGV)
 
@@ -53,13 +53,20 @@ edgesToStrings :: Ppr key => GraphEdges key -> [(String, [String])]
 edgesToStrings mp = List.map (\ (t, ts) -> (pprint' t, map pprint' (Set.toList ts))) (Map.toList mp)
 
 data S
-    = S { _instMap :: InstMap
+    = S { _instMap' :: InstMap
         , _visited :: Set TGV
         , _expanded :: ExpandMap }
 
-$(makeLenses ''S)
+$(makeClassy ''S)
 
-instance Monad m => MonadStates InstMap (StateT S m) where
+instance HasExpandMap S where
+    expandMap = expanded
+
+instance HasInstMap S where
+    instMap = instMap'
+
+{-
+instance Monad m => MonadState InstMap (StateT S m) where
     get = use instMap
     put s = instMap .= s
 
@@ -70,6 +77,7 @@ instance Monad m => MonadStates ExpandMap (StateT S m) where
 instance Monad m => MonadStates (Set TGV) (StateT S m) where
     get = use visited
     put s = visited .= s
+-}
 
 evalS :: Monad m => StateT S m a -> m a
 evalS action = evalStateT action (S mempty mempty mempty)
