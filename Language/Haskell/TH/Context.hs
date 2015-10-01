@@ -25,7 +25,7 @@ module Language.Haskell.TH.Context
 
 import Data.Maybe (isJust)
 import Control.Monad (filterM)
-import Control.Monad.States (MonadStates, get, modify)
+import Control.Monad.States (MonadStates, get, modify')
 import Control.Monad.Writer (MonadWriter, tell)
 import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
@@ -76,14 +76,14 @@ reifyInstancesWithContext className typeParameters = do
       -- trace ("        -> reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ "...") (return ())
       -- Add an entry with a bogus value to limit recursion on
       -- the predicate we are currently testing
-      modify (Map.insert p [] :: InstMap -> InstMap)
+      modify' (Map.insert p [] :: InstMap -> InstMap)
       -- Get all the instances of className that unify with the type parameters.
       insts <- qReifyInstances className typeParameters
       -- Filter out the ones that conflict with the instance context
       r <- filterM (testInstance className typeParameters) insts
       -- Now insert the correct value into the map and return it.  Because
       -- this instance was discovered in the Q monad it is marked Declared.
-      modify (Map.insert p (map Declared r))
+      modify' (Map.insert p (map Declared r))
       -- trace ("        <- reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ " -> " ++ pprint r) (return ())
       return r
 
@@ -173,7 +173,7 @@ tellInstance inst@(InstanceD _ instanceType _) =
           -- no point associating multiple instances with a predicate,
           -- compiling the resulting set of declarations is an error
           -- (overlapping instances.)
-         _ -> modify (Map.insert p [Undeclared inst])
+         _ -> modify' (Map.insert p [Undeclared inst])
 tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint inst
 
 -- | After all the declared and undeclared instances have been added

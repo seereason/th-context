@@ -1,5 +1,5 @@
 name:               th-context
-version:            0.22
+version:            0.23
 cabal-version:      >= 1.10
 build-type:         Simple
 license:            BSD3
@@ -19,6 +19,11 @@ description:        Use these functions to decide an a not-quite naive fashion
                     when computing the context.
 extra-source-files: test/Common.hs test/Context.hs test/Tests.hs test/Values.hs
 
+flag local-th-typegraph
+  Description: flag
+  Default: False
+  Manual: True
+
 Library
   hs-source-dirs: .
   build-depends:
@@ -28,15 +33,34 @@ Library
     haskell-src-exts,
     lens,
     mtl,
-    mtl-unleashed >= 0.2.1,
     syb,
     template-haskell >= 2.10,
     th-desugar,
-    th-orphans >= 0.10.0,
-    th-typegraph >= 0.27
+    th-orphans >= 0.10.0
   ghc-options:      -Wall -O2
   exposed-modules:  Language.Haskell.TH.Context
   default-language: Haskell2010
+  if flag(local-th-typegraph)
+    Hs-Source-Dirs: ../th-typegraph, ../mtl-unleashed
+    Build-Depends: set-extra
+    Exposed-Modules:
+      Language.Haskell.TH.TypeGraph.Arity
+      Language.Haskell.TH.TypeGraph.Edges
+      Language.Haskell.TH.TypeGraph.Expand
+      Language.Haskell.TH.TypeGraph.Free
+      Language.Haskell.TH.TypeGraph.Lens
+      Language.Haskell.TH.TypeGraph.Prelude
+      Language.Haskell.TH.TypeGraph.Shape
+      Language.Haskell.TH.TypeGraph.Stack
+      Language.Haskell.TH.TypeGraph.TypeGraph
+      Language.Haskell.TH.TypeGraph.TypeInfo
+      Language.Haskell.TH.TypeGraph.Vertex
+      Control.Monad.Readers
+      Control.Monad.States
+  else
+    Build-Depends:
+      th-typegraph >= 0.31,
+      mtl-unleashed >= 0.4
 
 test-suite th-context-tests
   type:             exitcode-stdio-1.0
@@ -54,16 +78,16 @@ test-suite th-context-tests
     hspec-core,
     lens,
     mtl,
-    mtl-unleashed,
     syb,
     template-haskell,
     text,
-    th-context >= 0.19,
+    th-context,
     th-desugar,
     th-orphans,
-    th-reify-many,
-    th-typegraph >= 0.27
+    th-reify-many
   default-language: Haskell2010
+  if !flag(local-th-typegraph)
+    Build-Depends: mtl-unleashed
 
 source-repository head
   type:     git
