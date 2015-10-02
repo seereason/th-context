@@ -2,7 +2,8 @@
 module Common where
 
 import Control.Lens (makeLenses, use, (.=))
-import Control.Monad.States (evalStateT, MonadStates(get, put), StateT)
+import Control.Monad.State (evalStateT, StateT)
+import Control.Monad.States (MonadStates(getPoly, putPoly))
 import Data.List as List (map)
 import Data.Map as Map (toList)
 import Data.Set as Set (Set, difference, empty, toList)
@@ -60,16 +61,16 @@ data S
 $(makeLenses ''S)
 
 instance Monad m => MonadStates InstMap (StateT S m) where
-    get = use instMap
-    put s = instMap .= s
+    getPoly = use instMap
+    putPoly s = instMap .= s
 
 instance Monad m => MonadStates ExpandMap (StateT S m) where
-    get = use expanded
-    put s = expanded .= s
+    getPoly = use expanded
+    putPoly s = expanded .= s
 
 instance Monad m => MonadStates (Set TGV) (StateT S m) where
-    get = use visited
-    put s = visited .= s
+    getPoly = use visited
+    putPoly s = visited .= s
 
 evalS :: Monad m => StateT S m a -> m a
 evalS action = evalStateT action (S mempty mempty mempty)

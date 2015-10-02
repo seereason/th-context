@@ -25,7 +25,7 @@ module Language.Haskell.TH.Context
 
 import Data.Maybe (isJust)
 import Control.Monad (filterM)
-import Control.Monad.States (MonadStates, get, modify')
+import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
 import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
@@ -69,21 +69,21 @@ reifyInstancesWithContext :: forall m. (DsMonad m, MonadStates InstMap m, MonadS
                              Name -> [Type] -> m [InstanceDec]
 reifyInstancesWithContext className typeParameters = do
   p <- expandType $ foldInstance className typeParameters
-  mp <- get :: m InstMap
+  mp <- getPoly :: m InstMap
   case Map.lookup p mp of
     Just x -> return $ map instanceDec x
     Nothing -> do
       -- trace ("        -> reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ "...") (return ())
       -- Add an entry with a bogus value to limit recursion on
       -- the predicate we are currently testing
-      modify' (Map.insert p [] :: InstMap -> InstMap)
+      modifyPoly (Map.insert p [] :: InstMap -> InstMap)
       -- Get all the instances of className that unify with the type parameters.
       insts <- qReifyInstances className typeParameters
       -- Filter out the ones that conflict with the instance context
       r <- filterM (testInstance className typeParameters) insts
       -- Now insert the correct value into the map and return it.  Because
       -- this instance was discovered in the Q monad it is marked Declared.
-      modify' (Map.insert p (map Declared r))
+      modifyPoly (Map.insert p (map Declared r))
       -- trace ("        <- reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ " -> " ++ pprint r) (return ())
       return r
 
@@ -166,14 +166,14 @@ tellInstance :: (DsMonad m, MonadStates InstMap m, Quasi m, MonadStates ExpandMa
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
        p <- expandType $ foldInstance className typeParameters
-       (mp :: InstMap) <- get
+       (mp :: InstMap) <- getPoly
        case Map.lookup p mp of
          Just (_ : _) -> return ()
           -- Here we set the instance list to a singleton - there is
           -- no point associating multiple instances with a predicate,
           -- compiling the resulting set of declarations is an error
           -- (overlapping instances.)
-         _ -> modify' (Map.insert p [Undeclared inst])
+         _ -> modifyPoly (Map.insert p [Undeclared inst])
 tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint inst
 
 -- | After all the declared and undeclared instances have been added
@@ -182,7 +182,7 @@ tellInstance inst = error $ "tellInstance - Not an instance: " ++ pprint inst
 -- reifyInstances, and tells them to the writer monad.
 tellUndeclared :: (MonadWriter [Dec] m, MonadStates InstMap m) => m ()
 tellUndeclared =
-    get >>= \(mp :: InstMap) -> tell . mapMaybe undeclared . concat . Map.elems $ mp
+    getPoly >>= \(mp :: InstMap) -> tell . mapMaybe undeclared . concat . Map.elems $ mp
     where
       undeclared :: DecStatus Dec -> Maybe Dec
       undeclared (Undeclared dec) = Just dec
