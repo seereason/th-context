@@ -24,6 +24,7 @@ module Language.Haskell.TH.Context
     ) where
 
 import Data.Maybe (isJust)
+import Control.Lens (view)
 import Control.Monad (filterM)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
@@ -36,7 +37,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.TH.TypeGraph.Expand (ExpandMap, expandType, E(unE))
+import Language.Haskell.TH.TypeGraph.Expand (ExpandMap, expandType, E, unE)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
 -- FIXME: Should actually be Map (E Pred) (Maybe (DecStatus
@@ -96,7 +97,7 @@ testInstance className typeParameters (InstanceD instanceContext instanceType _)
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
   -- instance context field.
-  mapM expandType (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext . map unE
+  mapM expandType (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext . map (view unE)
     where
       instancePredicates :: [Type] -> Type -> [Pred]
       instancePredicates (x : xs) (AppT l r) = AppT (AppT EqualityT x) r : instancePredicates xs l
