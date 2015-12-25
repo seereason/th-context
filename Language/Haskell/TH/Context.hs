@@ -21,6 +21,7 @@ module Language.Haskell.TH.Context
     , reifyInstancesWithContext
     , tellInstance
     , tellUndeclared
+    , noInstance
     ) where
 
 import Data.Maybe (isJust)
@@ -201,3 +202,14 @@ unfoldInstance :: Pred -> Maybe (Name, [Type])
 unfoldInstance (ConT name) = Just (name, [])
 unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
 unfoldInstance _ = Nothing
+
+noInstance :: (MonadStates ExpandMap m, MonadStates InstMap m, DsMonad m) => Name -> Name -> m Bool
+noInstance className typeName = do
+  i <- qReify typeName
+  typ <- case i of
+           TyConI (DataD _cxt _name tvbs _fundeps _decs) ->
+               do vs <- mapM (\c -> VarT <$> runQ (newName [c])) (take (length tvbs) ['a'..'z'])
+                  return $ foldl AppT (ConT typeName) vs
+           _ -> error "haven't thought about what happens here"
+  r <- null <$> reifyInstancesWithContext className [typ]
+  return r
