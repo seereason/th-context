@@ -11,6 +11,8 @@ import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Bits
 import Data.List as List (map)
+import Data.Logic.ATP (Failing(..), unify)
+import Data.Logic.ATP.TH ({- Unify instance for template haskell -})
 import Data.Map as Map (Map, empty, map, mapKeys, toList, fromList)
 import Data.Set as Set (fromList, map, Set)
 import Language.Haskell.TH
@@ -83,6 +85,17 @@ tests = do
                   lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec) (Map.mapKeys pprintPred mp))))
           `shouldBe` noDifferences
 -}
+
+  it "knows variables with different names unify" $ do
+     runStateT (unify (VarT (mkName "a"), VarT (mkName "b"))) mempty `shouldBe` Failure [] -- (Map.fromList [])
+{-
+  it "knows variables are not Eq with other types" $ do
+     (E (VarT (mkName "a")) == E (AppT (VarT (mkName "b")) (VarT (mkName "c")))) `shouldBe` False
+
+  it "knows different types are not Eq" $ do
+     (E (ConT (mkName "a")) == E (ConT (mkName "b"))) `shouldBe` False
+-}
+
   it "can handle multi param class IArray" $ do
      (\ (insts, pairs) -> (setDifferences (Set.fromList insts) arrayInstances,
                            Map.map Set.fromList (Map.fromList pairs)))

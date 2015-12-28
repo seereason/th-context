@@ -18,11 +18,12 @@ import Data.Logic.ATP.Lit (IsLiteral(..), JustLiteral)
 import Data.Logic.ATP.Pretty (hcat, HasFixity(..), Pretty(pPrint), text)
 import Data.Logic.ATP.Prop (IsPropositional(..))
 import Data.Logic.ATP.Term (IsTerm(..))
-import Data.Logic.ATP.Unif (Unify(unify), unify_literals)
+import Data.Logic.ATP.Unif (Unify(unify, UTermOf), unify_literals)
 import Data.Monoid ((<>))
 import Data.String (IsString(fromString))
 import Language.Haskell.TH
 import Language.Haskell.TH.PprLib (to_HPJ_Doc)
+import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 
 newtype Context = Context [Type] deriving (Eq, Ord, Show)
 
@@ -135,9 +136,13 @@ instance IsPropositional Context where
     foldPropositional' = error "foldPropositional'"
     foldCombination = error "foldCombination"
 
-#if 0
+-- Unify a (concrete) type with a predicate type, such @Ord a@.
+instance (TVarOf Type ~ Type, TermOf Type ~ Type, JustLiteral Type) => Unify (Type, Type) where
+    type UTermOf (Type, Type) = TermOf Type
+    unify (typ, cxt) = error $ "Unimplemented: unify (" ++ pprint' typ ++ " :: Type, " ++ pprint' cxt ++ " :: Type)"
+
 -- Unify a (concrete) type with a set of context, resulting in a map
--- of variable assignments.  
-instance (TVarOf Type ~ Type, TermOf Type ~ Type, JustLiteral Type) => Unify Type [Type] where
-    unify typ cxt = 
-#endif
+-- of variable assignments.
+instance (TVarOf Type ~ Type, TermOf Type ~ Type, JustLiteral Type) => Unify (Type, [Type]) where
+    type UTermOf (Type, [Type]) = TermOf Type
+    unify (typ, cxt) = error $ "Unimplemented: unify (" ++ pprint' typ ++ " :: Type, " ++ pprint' cxt ++ " :: [Type])"
