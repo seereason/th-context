@@ -30,7 +30,6 @@ import Control.Monad (filterM)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
 import Data.Generics (everywhere, mkT)
-import Data.List (intercalate)
 import Data.Map as Map (elems, insert, lookup, Map)
 import Data.Maybe (mapMaybe)
 -- import Debug.Trace (trace)
@@ -98,16 +97,17 @@ testInstance className typeParameters (InstanceD instanceContext instanceType _)
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
   -- instance context field.
-  mapM expandType (instancePredicates (reverse typeParameters) instanceType ++ instanceContext) >>= testContext . map (view unE)
+  mapM expandType (instancePredicates ++ instanceContext) >>= testContext . map (view unE)
     where
-      instancePredicates :: [Type] -> Type -> [Pred]
-      instancePredicates (x : xs) (AppT l r) = AppT (AppT EqualityT x) r : instancePredicates xs l
-      instancePredicates [] (ConT className') | className == className' = []
-      instancePredicates _ _ =
-          error $ (unlines ["testInstance: Failure unifying instance with arguments.  This should never",
-                            "happen because qReifyInstance returned this instance for these exact arguments:",
-                            " typeParameters=[" ++ intercalate ", " (map show typeParameters) ++ "]",
-                            " instanceType=" ++ show instanceType])
+      instancePredicates :: [Pred]
+      instancePredicates = maybe (error $ "Invalid instance type: " ++ show instanceType) instanceEqualities (unfoldInstance instanceType)
+      instanceEqualities (_, instanceArgs)
+          | length instanceArgs /= length typeParameters =
+              error $ "type class arity error:" ++
+                      "\n  class name = " ++ show className ++
+                      "\n  type parameters = " ++ show typeParameters ++
+                      "\n  instance args = " ++ show instanceArgs
+      instanceEqualities (_, instanceArgs) = map (\(a, b) ->  AppT (AppT EqualityT a) b) (zip typeParameters instanceArgs)
 testInstance _ _ x = error $ "qReifyInstances returned something that doesn't appear to be an instance declaration: " ++ show x
 
 -- | Now we have predicates representing the unification of the type
