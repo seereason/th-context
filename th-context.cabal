@@ -52,6 +52,7 @@ test-suite th-context-tests
     base,
     bytestring,
     containers,
+    data-default,
     deepseq,
     ghc-prim,
     hspec,

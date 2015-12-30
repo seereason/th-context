@@ -17,6 +17,7 @@
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 module Language.Haskell.TH.Context
     ( InstMap
+    , ContextM
     , DecStatus(Declared, Undeclared, instanceDec)
     , reifyInstancesWithContext
     , tellInstance
@@ -30,20 +31,27 @@ import Control.Monad (filterM)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
 import Data.Generics (everywhere, mkT)
+import Data.List (intercalate)
 import Data.Map as Map (elems, insert, lookup, Map)
 import Data.Maybe (mapMaybe)
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.TypeGraph.Expand (ExpandMap, expandType, E, unE)
+import Language.Haskell.TH.TypeGraph.Prelude (pprint')
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
 -- FIXME: Should actually be Map (E Pred) (Maybe (DecStatus
 -- InstanceDec)), because having more than one instance would be a
 -- compile error.
 type InstMap = Map (E Pred) [DecStatus InstanceDec]
+
+-- | Combine the DsMonad (desugaring), which includes the Q monad, and
+-- state to record declared instances, type expansions, and a string
+-- for debugging messages.
+class (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m, MonadStates String m) => ContextM m
 
 -- | Did we get this instance from the Q monad or does it still need to be spliced?
 data DecStatus a
@@ -66,15 +74,15 @@ instance Ppr a => Ppr (DecStatus a) where
 -- monad 'InstMap', associated with an empty list of predicates, and the
 -- empty list is returned.  Later the caller can use 'tellInstance' to
 -- associate instances with the predicate.
-reifyInstancesWithContext :: forall m. (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m) =>
-                             Name -> [Type] -> m [InstanceDec]
+reifyInstancesWithContext :: forall m. ContextM m => Name -> [Type] -> m [InstanceDec]
 reifyInstancesWithContext className typeParameters = do
   p <- expandType $ foldInstance className typeParameters
   mp <- getPoly :: m InstMap
   case Map.lookup p mp of
     Just x -> return $ map instanceDec x
     Nothing -> do
-      -- trace ("        -> reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ "...") (return ())
+      modifyPoly ("  " ++)
+      pre <- getPoly :: m String
       -- Add an entry with a bogus value to limit recursion on
       -- the predicate we are currently testing
       modifyPoly (Map.insert p [] :: InstMap -> InstMap)
@@ -82,17 +90,21 @@ reifyInstancesWithContext className typeParameters = do
       insts <- qReifyInstances className typeParameters
       -- Filter out the ones that conflict with the instance context
       r <- filterM (testInstance className typeParameters) insts
+      trace (intercalate ("\n" ++ pre ++ "  ")
+                         ((pre ++ "reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ " ->") :
+                          map pprint' r)) (return ())
       -- Now insert the correct value into the map and return it.  Because
       -- this instance was discovered in the Q monad it is marked Declared.
       modifyPoly (Map.insert p (map Declared r))
       -- trace ("        <- reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ " -> " ++ pprint r) (return ())
+      modifyPoly (drop 2 :: String -> String)
       return r
 
 -- | Test one of the instances returned by qReifyInstances against the
 -- context we have computed so far.  We have already added a ClassP predicate
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
-testInstance :: (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m) => Name -> [Type] -> InstanceDec -> m Bool
+testInstance :: ContextM m => Name -> [Type] -> InstanceDec -> m Bool
 testInstance className typeParameters (InstanceD instanceContext instanceType _) = do
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
@@ -146,7 +158,7 @@ unify x = [x]
 -- | Decide whether a predicate is consistent with the accumulated
 -- context.  Use recursive calls to reifyInstancesWithContext when
 -- we encounter a class name applied to a list of type parameters.
-consistent :: (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m) => Pred -> m Bool
+consistent :: ContextM m => Pred -> m Bool
 consistent typ
     | isJust (unfoldInstance typ) =
         let Just (className, typeParameters) = unfoldInstance typ in
@@ -203,7 +215,7 @@ unfoldInstance (ConT name) = Just (name, [])
 unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
 unfoldInstance _ = Nothing
 
-noInstance :: (MonadStates ExpandMap m, MonadStates InstMap m, DsMonad m) => Name -> Name -> m Bool
+noInstance :: ContextM m => Name -> Name -> m Bool
 noInstance className typeName = do
   i <- qReify typeName
   typ <- case i of

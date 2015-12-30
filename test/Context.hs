@@ -6,10 +6,11 @@ module Context where
 
 import Control.DeepSeq
 import Control.Lens (view)
-import Control.Monad.State (evalStateT, runStateT)
+import Control.Monad.State (evalStateT, execStateT, runStateT)
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Bits
+import Data.Default (def)
 import Data.List as List (map)
 import Data.Logic.ATP (Failing(..), unify)
 import Data.Logic.ATP.TH ({- Unify instance for template haskell -})
@@ -87,7 +88,9 @@ tests = do
 -}
 
   it "knows variables with different names unify" $ do
-     runStateT (unify (VarT (mkName "a"), VarT (mkName "b"))) mempty `shouldBe` Failure [] -- (Map.fromList [])
+     let a = mkName "a"
+         b = mkName "b"
+     execStateT (unify (VarT a, VarT b)) mempty `shouldBe` Success (Map.fromList [(VarT a, VarT b)])
 {-
   it "knows variables are not Eq with other types" $ do
      (E (VarT (mkName "a")) == E (AppT (VarT (mkName "b")) (VarT (mkName "c")))) `shouldBe` False
@@ -101,7 +104,7 @@ tests = do
                            Map.map Set.fromList (Map.fromList pairs)))
              -- Unquote the template haskell Q monad expression
              $(do -- Run instances and save the result and the state monad result
-                  (insts, s) <- runStateT (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")]) (S mempty mempty mempty)
+                  (insts, s) <- runStateT (reifyInstancesWithContext ''IArray [ConT ''UArray, VarT (mkName "a")]) def
                   -- Convert to lists of text so we can lift out of Q
                   lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . _unE) (view instMap s)))))
           `shouldBe` (noDifferences,
@@ -109,13 +112,13 @@ tests = do
                       Map.fromList [("IArray UArray a", Set.map (\ x -> "Declared (" ++ x ++ ")") arrayInstances)] :: Map String (Set String))
 
   it "handles a wrapper instance" $
-     $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyClass [AppT (ConT ''Wrapper) (ConT ''Int)]) (S mempty mempty mempty)
+     $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyClass [AppT (ConT ''Wrapper) (ConT ''Int)]) def
           lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . _unE) (view instMap s)))))
           `shouldBe` (["instance MyClass a => MyClass (Wrapper a)"],
                       [("MyClass (Wrapper Int)",["Declared (instance MyClass a => MyClass (Wrapper a))"]),
                        ("MyClass Int",["Declared (instance MyClass Int)"])])
   it "handles a multi param wrapper instance" $
-     $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyMPClass [VarT (mkName "a"), AppT (ConT ''Wrapper) (ConT ''Int)]) (S mempty mempty mempty)
+     $(do (insts, s) <- runStateT (reifyInstancesWithContext ''MyMPClass [VarT (mkName "a"), AppT (ConT ''Wrapper) (ConT ''Int)]) def
           lift (List.map pprintDec insts, Map.toList (Map.map (List.map pprintDec') (Map.mapKeys (pprintPred . _unE) (view instMap s)))))
           `shouldBe` (["instance MyMPClass a b => MyMPClass a (Wrapper b)"],
                       [("MyMPClass a (Wrapper Int)",["Declared (instance MyMPClass a b => MyMPClass a (Wrapper b))"]),

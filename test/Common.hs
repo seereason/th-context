@@ -4,12 +4,14 @@ module Common where
 import Control.Lens (makeLenses, use, (.=))
 import Control.Monad.State (evalStateT, StateT)
 import Control.Monad.States (MonadStates(getPoly, putPoly))
+import Data.Default (Default(def))
 import Data.List as List (map)
 import Data.Map as Map (toList)
 import Data.Set as Set (Set, difference, empty, toList)
 import Data.Generics (Data, everywhere, mkT)
 import Language.Haskell.TH
-import Language.Haskell.TH.Context (DecStatus(Declared, Undeclared), InstMap)
+import Language.Haskell.TH.Context (ContextM, DecStatus(Declared, Undeclared), InstMap)
+import Language.Haskell.TH.Desugar (DsMonad)
 import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
 import Language.Haskell.TH.TypeGraph.Expand (ExpandMap)
 import Language.Haskell.TH.TypeGraph.Prelude (pprint')
@@ -56,7 +58,13 @@ edgesToStrings mp = List.map (\ (t, ts) -> (pprint' t, map pprint' (Set.toList t
 data S
     = S { _instMap :: InstMap
         , _visited :: Set TGV
-        , _expanded :: ExpandMap }
+        , _expanded :: ExpandMap
+        , _prefix :: String }
+
+instance Default S where
+    def = S mempty mempty mempty ""
+
+instance DsMonad m => ContextM (StateT S m)
 
 $(makeLenses ''S)
 
@@ -72,5 +80,9 @@ instance Monad m => MonadStates (Set TGV) (StateT S m) where
     getPoly = use visited
     putPoly s = visited .= s
 
+instance Monad m => MonadStates String (StateT S m) where
+    getPoly = use prefix
+    putPoly s = prefix .= s
+
 evalS :: Monad m => StateT S m a -> m a
-evalS action = evalStateT action (S mempty mempty mempty)
+evalS action = evalStateT action def

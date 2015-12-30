@@ -10,6 +10,7 @@ module Data.Logic.ATP.TH
     ( unfoldApply
     ) where
 
+import Control.Monad.State (modify)
 import Data.List (intersperse)
 import Data.Logic.ATP (IsAtom, IsVariable(..), IsFunction, IsPredicate, HasEquate(..))
 import Data.Logic.ATP.Apply (HasApply(PredOf, TermOf, applyPredicate, foldApply', overterms, onterms))
@@ -19,6 +20,7 @@ import Data.Logic.ATP.Pretty (hcat, HasFixity(..), Pretty(pPrint), text)
 import Data.Logic.ATP.Prop (IsPropositional(..))
 import Data.Logic.ATP.Term (IsTerm(..))
 import Data.Logic.ATP.Unif (Unify(unify, UTermOf), unify_literals)
+import Data.Map as Map (insert)
 import Data.Monoid ((<>))
 import Data.String (IsString(fromString))
 import Language.Haskell.TH
@@ -139,7 +141,12 @@ instance IsPropositional Context where
 -- Unify a (concrete) type with a predicate type, such @Ord a@.
 instance (TVarOf Type ~ Type, TermOf Type ~ Type, JustLiteral Type) => Unify (Type, Type) where
     type UTermOf (Type, Type) = TermOf Type
-    unify (typ, cxt) = error $ "Unimplemented: unify (" ++ pprint' typ ++ " :: Type, " ++ pprint' cxt ++ " :: Type)"
+    unify (AppT a b, AppT c d) = unify (a, c) >> unify (b, d)
+    unify (a@(VarT _), b) = modify (Map.insert a b)
+    unify (a, b@(VarT _)) = modify (Map.insert b a)
+    unify (a, b) | a == b = return ()
+    unify (a, b) = fail $ "Cannot unify: (" ++ pprint' a ++ ", " ++ pprint' b ++ ")"
+    -- unify (typ, cxt) = error $ "Unimplemented: unify (" ++ pprint' typ ++ " :: Type, " ++ pprint' cxt ++ " :: Type)"
 
 -- Unify a (concrete) type with a set of context, resulting in a map
 -- of variable assignments.
