@@ -123,37 +123,20 @@ testInstance className typeParameters (InstanceD instanceContext instanceType _)
 testInstance _ _ x = error $ "qReifyInstances returned something that doesn't appear to be an instance declaration: " ++ show x
 
 -- | Now we have predicates representing the unification of the type
--- parameters with the instance type.  Are they consistent?  Find out
--- using type synonym expansion, variable substitution, elimination of
--- vacuous predicates, and unification.
-testContext :: (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m) => [Pred] -> m Bool
-testContext context =
-    and <$> (simplifyContext context >>= mapM consistent)
+-- parameters with the instance type, along with the instance
+-- superclasses.  Are they consistent?  Find out using type synonym
+-- expansion, variable substitution, elimination of vacuous
+-- predicates, and unification.
+testContext :: ContextM m => [Pred] -> m Bool
+testContext context = and <$> (unifyContext context [] >>= mapM consistent)
 
--- | Perform type expansion on the predicates, then simplify using
--- variable substitution and eliminate vacuous equivalences.
-simplifyContext :: (DsMonad m, MonadStates InstMap m) => [Pred] -> m [Pred]
-simplifyContext context =
-    do let context' = concat $ map unify context
-       let context'' = foldl simplifyPredicate context' context'
-       if (context'' == context) then return context'' else simplifyContext context''
-
--- | Try to simplify the context by eliminating of one of the predicates.
--- If we succeed start again with the new context.
-simplifyPredicate :: [Pred] -> Pred -> [Pred]
-simplifyPredicate context (AppT (AppT EqualityT v@(VarT _)) b) = everywhere (mkT (\ x -> if x == v then b else x)) context
-simplifyPredicate context (AppT (AppT EqualityT a) v@(VarT _)) = everywhere (mkT (\ x -> if x == v then a else x)) context
-simplifyPredicate context p@(AppT (AppT EqualityT a) b) | a == b = filter (/= p) context
-simplifyPredicate context _ = context
-
--- | Unify the two arguments of an EqualP predicate, return a list of
--- simpler predicates associating types with a variables.
-unify :: Pred -> [Pred]
-unify (AppT (AppT EqualityT (AppT a b)) (AppT c d)) = unify (AppT (AppT EqualityT a) c) ++ unify (AppT (AppT EqualityT b) d)
-unify (AppT (AppT EqualityT (ConT a)) (ConT b)) | a == b = []
-unify (AppT (AppT EqualityT a@(VarT _)) b) = [AppT (AppT EqualityT a) b]
-unify (AppT (AppT EqualityT a) b@(VarT _)) = [AppT (AppT EqualityT a) b]
-unify x = [x]
+unifyContext :: (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m) => [Pred] -> [Pred] -> m [Pred]
+unifyContext (AppT (AppT EqualityT v@(VarT _)) b : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then b else x)) (more ++ result)) []
+unifyContext (AppT (AppT EqualityT a) v@(VarT _) : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then a else x)) (more ++ result)) []
+unifyContext (AppT (AppT EqualityT a) b : more) result | a == b = unifyContext more result
+unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) result = unifyContext (AppT (AppT EqualityT a) c : AppT (AppT EqualityT b) d : more) result
+unifyContext (x : more) result = unifyContext more (x : result)
+unifyContext [] result = return result
 
 -- | Decide whether a predicate is consistent with the accumulated
 -- context.  Use recursive calls to reifyInstancesWithContext when
