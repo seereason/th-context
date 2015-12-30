@@ -46,13 +46,13 @@ pprintDec' (Declared x) = "Declared (" ++ pprint' (unReify x) ++ ")"
 pprintType :: Type -> String
 pprintType = pprint' . unReify
 
-pprintVertex :: (Ppr v, TypeGraphVertex v) => v -> String
+pprintVertex :: (Ppr v, Data v, TypeGraphVertex v) => v -> String
 pprintVertex = pprint'
 
 pprintPred :: Pred -> String
 pprintPred = pprint' . unReify
 
-edgesToStrings :: Ppr key => GraphEdges key -> [(String, [String])]
+edgesToStrings :: (Ppr key, Data key) => GraphEdges key -> [(String, [String])]
 edgesToStrings mp = List.map (\ (t, ts) -> (pprint' t, map pprint' (Set.toList ts))) (Map.toList mp)
 
 data S

@@ -25,15 +25,15 @@ module Language.Haskell.TH.Context
     , noInstance
     ) where
 
-import Data.Maybe (isJust)
 import Control.Lens (view)
 import Control.Monad (filterM)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
+import Data.Bool (bool)
 import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
 import Data.Map as Map (elems, insert, lookup, Map)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (isJust, mapMaybe)
 import Debug.Trace (trace)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
@@ -91,7 +91,7 @@ reifyInstancesWithContext className typeParameters = do
       -- Filter out the ones that conflict with the instance context
       r <- filterM (testInstance className typeParameters) insts
       trace (intercalate ("\n" ++ pre ++ "  ")
-                         ((pre ++ "reifyInstancesWithContext " ++ pprint (foldInstance className typeParameters) ++ " ->") :
+                         ((pre ++ "reifyInstancesWithContext " ++ pprint' (foldInstance className typeParameters) ++ " ->" ++ bool "" " []" (null r)) :
                           map pprint' r)) (return ())
       -- Now insert the correct value into the map and return it.  Because
       -- this instance was discovered in the Q monad it is marked Declared.

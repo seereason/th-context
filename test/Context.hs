@@ -48,7 +48,7 @@ tests = do
   -- Test the behavior of th-reify-many
   it "can tell that there is an instance NFData Char" $
      $(do insts <- qReifyInstances ''NFData [ConT ''Char]
-          lift $ List.map pprint' insts) `shouldBe` (["instance Control.DeepSeq.NFData GHC.Types.Char"] :: [String])
+          lift $ List.map pprint' insts) `shouldBe` (["instance NFData Char"] :: [String])
 
   it "can tell that there is no instance NFData ExitCode" $
      $(do insts <- qReifyInstances ''NFData [ConT ''ExitCode]
