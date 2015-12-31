@@ -150,6 +150,6 @@ instance (TVarOf Type ~ Type, TermOf Type ~ Type, JustLiteral Type) => Unify (Ty
 
 -- Unify a (concrete) type with a set of context, resulting in a map
 -- of variable assignments.
-instance (TVarOf Type ~ Type, TermOf Type ~ Type, JustLiteral Type) => Unify (Type, [Type]) where
+instance (TVarOf Type ~ Type, TermOf Type ~ Type) => Unify (Type, [Type]) where
     type UTermOf (Type, [Type]) = TermOf Type
     unify (typ, cxt) = error $ "Unimplemented: unify (" ++ pprint' typ ++ " :: Type, " ++ pprint' cxt ++ " :: [Type])"
