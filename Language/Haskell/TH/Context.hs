@@ -130,7 +130,7 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 testContext :: ContextM m => [Pred] -> m Bool
 testContext context = and <$> (unifyContext context [] >>= mapM consistent)
 
-unifyContext :: (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m) => [Pred] -> [Pred] -> m [Pred]
+unifyContext :: ContextM m => [Pred] -> [Pred] -> m [Pred]
 unifyContext (AppT (AppT EqualityT v@(VarT _)) b : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then b else x)) (more ++ result)) []
 unifyContext (AppT (AppT EqualityT a) v@(VarT _) : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then a else x)) (more ++ result)) []
 unifyContext (AppT (AppT EqualityT a) b : more) result | a == b = unifyContext more result
@@ -159,7 +159,7 @@ consistent typ = error $ "Unexpected Pred: " ++ pprint typ
 -- this, the instance predicate (constructed from class name and type
 -- parameters) will be considered part of the context for subsequent
 -- calls to reifyInstancesWithContext.
-tellInstance :: (DsMonad m, MonadStates InstMap m, Quasi m, MonadStates ExpandMap m) => Dec -> m ()
+tellInstance :: ContextM m => Dec -> m ()
 tellInstance inst@(InstanceD _ instanceType _) =
     do let Just (className, typeParameters) = unfoldInstance instanceType
        p <- expandType $ foldInstance className typeParameters
