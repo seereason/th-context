@@ -29,7 +29,6 @@ import Control.Lens (view)
 import Control.Monad (filterM)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
-import Data.Bool (bool)
 import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
 import Data.Map as Map (elems, insert, lookup, Map)
@@ -90,9 +89,10 @@ reifyInstancesWithContext className typeParameters = do
       insts <- qReifyInstances className typeParameters
       -- Filter out the ones that conflict with the instance context
       r <- filterM (testInstance className typeParameters) insts
-      trace (intercalate ("\n" ++ pre ++ "  ")
-                         ((pre ++ "reifyInstancesWithContext " ++ pprint' (foldInstance className typeParameters) ++ " ->" ++ bool "" " []" (null r)) :
-                          map pprint' r)) (return ())
+      trace (intercalate (",\n" ++ pre ++ "    ")
+                         ((pre ++ "reifyInstancesWithContext " ++ pprint' (foldInstance className typeParameters) ++ " -> [") :
+                          map (\(InstanceD _ typ _) -> pprint' typ) r) ++
+                         "]") (return ())
       -- Now insert the correct value into the map and return it.  Because
       -- this instance was discovered in the Q monad it is marked Declared.
       modifyPoly (Map.insert p (map Declared r))
@@ -207,4 +207,5 @@ noInstance className typeName = do
                   return $ foldl AppT (ConT typeName) vs
            _ -> error "haven't thought about what happens here"
   r <- null <$> reifyInstancesWithContext className [typ]
+  trace ("noInstance " ++ show className ++ " " ++ show typeName ++ " -> " ++ show r) (return ())
   return r
