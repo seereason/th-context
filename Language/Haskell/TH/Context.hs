@@ -89,7 +89,7 @@ reifyInstancesWithContext className typeParameters = do
       insts <- qReifyInstances className typeParameters
       -- Filter out the ones that conflict with the instance context
       r <- filterM (testInstance className typeParameters) insts
-      trace (intercalate (",\n" ++ pre ++ "    ")
+      trace (intercalate ("\n" ++ pre ++ "    ")
                          ((pre ++ "reifyInstancesWithContext " ++ pprint' (foldInstance className typeParameters) ++ " -> [") :
                           map (\(InstanceD _ typ _) -> pprint' typ) r) ++
                          "]") (return ())
