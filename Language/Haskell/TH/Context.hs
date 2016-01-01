@@ -32,7 +32,7 @@ import Control.Monad.Writer (MonadWriter, tell)
 import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
 import Data.Map as Map (elems, insert, lookup, Map)
-import Data.Maybe (isJust, mapMaybe)
+import Data.Maybe (mapMaybe)
 import Debug.Trace (trace)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
@@ -130,30 +130,26 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 testContext :: ContextM m => [Pred] -> m Bool
 testContext context = and <$> (unifyContext context [] >>= mapM consistent)
 
+-- | Unify a list of predicates, expanding all equate predicates.
 unifyContext :: ContextM m => [Pred] -> [Pred] -> m [Pred]
 unifyContext (AppT (AppT EqualityT v@(VarT _)) b : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then b else x)) (more ++ result)) []
 unifyContext (AppT (AppT EqualityT a) v@(VarT _) : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then a else x)) (more ++ result)) []
 unifyContext (AppT (AppT EqualityT a) b : more) result | a == b = unifyContext more result
-unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) result = unifyContext (AppT (AppT EqualityT a) c : AppT (AppT EqualityT b) d : more) result
+unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) result =
+    -- I'm told this is incorrect in the presence of type functions
+    unifyContext (AppT (AppT EqualityT a) c : AppT (AppT EqualityT b) d : more) result
 unifyContext (x : more) result = unifyContext more (x : result)
 unifyContext [] result = return result
 
--- | Decide whether a predicate is consistent with the accumulated
--- context.  Use recursive calls to reifyInstancesWithContext when
--- we encounter a class name applied to a list of type parameters.
+-- | Decide whether a predicate returned by 'unifyContext' is
+-- consistent with the accumulated context.  Use recursive calls to
+-- reifyInstancesWithContext when we encounter a class name applied to
+-- a list of type parameters.
 consistent :: ContextM m => Pred -> m Bool
-consistent typ
-    | isJust (unfoldInstance typ) =
-        let Just (className, typeParameters) = unfoldInstance typ in
-        (not . null) <$> reifyInstancesWithContext className typeParameters
-consistent (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
-    -- I'm told this is incorrect in the presence of type functions
-    (&&) <$> consistent (AppT (AppT EqualityT a) c) <*> consistent (AppT (AppT EqualityT b) d)
-consistent (AppT (AppT EqualityT (VarT _)) _) = return True
-consistent (AppT (AppT EqualityT _) (VarT _)) = return True
-consistent (AppT (AppT EqualityT a) b) | a == b = return True
-consistent (AppT (AppT EqualityT _) _) = return False
-consistent typ = error $ "Unexpected Pred: " ++ pprint typ
+consistent typ =
+    maybe (error $ "Unexpected Pred: " ++ pprint typ)
+          (\(className, typeParameters) -> (not . null) <$> reifyInstancesWithContext className typeParameters)
+          (unfoldInstance typ)
 
 -- | Declare an instance in the state monad, marked Undeclared.  After
 -- this, the instance predicate (constructed from class name and type
