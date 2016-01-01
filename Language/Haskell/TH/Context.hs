@@ -27,12 +27,13 @@ module Language.Haskell.TH.Context
 
 import Control.Lens (view)
 import Control.Monad (filterM)
+import Control.Monad.State (modify, execStateT, StateT)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
-import Data.Generics (everywhere, mkT)
+import Data.Generics (Data, everywhere, mkT)
 import Data.List (intercalate)
-import Data.Map as Map (elems, insert, lookup, Map)
-import Data.Maybe (mapMaybe)
+import Data.Map as Map (elems, insert, insertWithKey, lookup, Map)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Debug.Trace (trace)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
@@ -128,24 +129,50 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- expansion, variable substitution, elimination of vacuous
 -- predicates, and unification.
 testContext :: ContextM m => [Pred] -> m Bool
-testContext context = and <$> (unifyContext context [] >>= mapM consistent)
+testContext context = and <$> (execStateT (unifyContext context) mempty >>= \mp -> mapM consistent (expandMappings mp context))
 
 -- | Unify a list of predicates, expanding all equate predicates.
-unifyContext :: ContextM m => [Pred] -> [Pred] -> m [Pred]
-unifyContext (AppT (AppT EqualityT v@(VarT _)) b : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then b else x)) (more ++ result)) []
-unifyContext (AppT (AppT EqualityT a) v@(VarT _) : more) result = unifyContext (everywhere (mkT (\ x -> if x == v then a else x)) (more ++ result)) []
-unifyContext (AppT (AppT EqualityT a) b : more) result | a == b = unifyContext more result
-unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) result =
+unifyContext :: Monad m => [Pred] -> StateT (Map Name Pred) m ()
+unifyContext (AppT (AppT EqualityT (VarT a)) b : more) = modify (bind a b) >> unifyContext more
+unifyContext (AppT (AppT EqualityT a) (VarT b) : more) = modify (bind b a) >> unifyContext more
+unifyContext (AppT (AppT EqualityT a) b : more) | a == b = unifyContext more
+unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) =
     -- I'm told this is incorrect in the presence of type functions
-    unifyContext (AppT (AppT EqualityT a) c : AppT (AppT EqualityT b) d : more) result
-unifyContext (x : more) result = unifyContext more (x : result)
-unifyContext [] result = return result
+    unifyContext (AppT (AppT EqualityT a) c : AppT (AppT EqualityT b) d : more)
+unifyContext (_ : more) = unifyContext more
+unifyContext [] = return ()
+
+expandMappings :: Data a => Map Name Pred -> a -> a
+expandMappings mp a =
+    everywhere (mkT (\x -> case x of
+                             VarT v -> fromMaybe x (Map.lookup v mp)
+                             _ -> x)) a
+
+expandVariable :: Data a => Name -> Pred -> a -> a
+expandVariable v a = everywhere (mkT (\x -> if x == VarT v then a else x))
+
+-- | Create a new variable binding, making sure all bound variables in
+-- are expanded in the resulting map.
+bind :: Name -> Pred -> Map Name Pred -> Map Name Pred
+bind v a mp =
+    -- First, expand all occurrences of the new variable in existing bindings
+    let mp' = expandVariable v a mp in
+    -- Next, expand all bound variables in the new binding
+    let a' = expandMappings mp' a in
+    -- Does this introduce any recursive bindings?
+    let a'' = expandVariable v (error $ "Recursive binding of " ++ show v) a' in
+    -- If the value is already bound, make sure the binding is identical
+    Map.insertWithKey (\v' a1 a2 ->
+                           if a1 == a2
+                           then a1
+                           else error ("Conflicting definitions of " ++ show v' ++ ":\n  " ++ show a1 ++ "\n  " ++ show a2)) v a'' mp'
 
 -- | Decide whether a predicate returned by 'unifyContext' is
 -- consistent with the accumulated context.  Use recursive calls to
 -- reifyInstancesWithContext when we encounter a class name applied to
 -- a list of type parameters.
 consistent :: ContextM m => Pred -> m Bool
+consistent (AppT (AppT EqualityT a) b) | a == b = return True
 consistent typ =
     maybe (error $ "Unexpected Pred: " ++ pprint typ)
           (\(className, typeParameters) -> (not . null) <$> reifyInstancesWithContext className typeParameters)
