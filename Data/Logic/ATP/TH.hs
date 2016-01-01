@@ -139,7 +139,7 @@ instance IsPropositional Context where
     foldCombination = error "foldCombination"
 
 -- Unify a (concrete) type with a predicate type, such @Ord a@.
-instance (TVarOf Type ~ Type, TermOf Type ~ Type, JustLiteral Type) => Unify (Type, Type) where
+instance (TVarOf Type ~ Type, TermOf Type ~ Type) => Unify (Type, Type) where
     type UTermOf (Type, Type) = TermOf Type
     unify (AppT a b, AppT c d) = unify (a, c) >> unify (b, d)
     unify (a@(VarT _), b) = modify (Map.insert a b)
