@@ -132,9 +132,9 @@ testContext :: ContextM m => [Pred] -> m Bool
 testContext context = and <$> (execStateT (unifyContext context) mempty >>= \mp -> mapM consistent (expandMappings mp context))
 
 -- | Unify a list of predicates, expanding all equate predicates.
-unifyContext :: Monad m => [Pred] -> StateT (Map Name Pred) m ()
-unifyContext (AppT (AppT EqualityT (VarT a)) b : more) = modify (bind a b) >> unifyContext more
-unifyContext (AppT (AppT EqualityT a) (VarT b) : more) = modify (bind b a) >> unifyContext more
+unifyContext :: Monad m => [Pred] -> StateT (Map Pred Pred) m ()
+unifyContext (AppT (AppT EqualityT a@(VarT _)) b : more) = modify (bind a b) >> unifyContext more
+unifyContext (AppT (AppT EqualityT a) b@(VarT _) : more) = modify (bind b a) >> unifyContext more
 unifyContext (AppT (AppT EqualityT a) b : more) | a == b = unifyContext more
 unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) =
     -- I'm told this is incorrect in the presence of type functions
@@ -142,19 +142,19 @@ unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) =
 unifyContext (_ : more) = unifyContext more
 unifyContext [] = return ()
 
-expandMappings :: Data a => Map Name Pred -> a -> a
+expandMappings :: Data a => Map Pred Pred -> a -> a
 expandMappings mp a =
     everywhere (mkT (\x -> case x of
-                             VarT v -> fromMaybe x (Map.lookup v mp)
+                             v@(VarT _) -> fromMaybe x (Map.lookup v mp)
                              _ -> x)) a
 
-expandVariable :: Data a => Name -> Pred -> a -> a
-expandVariable v a = everywhere (mkT (\x -> if x == VarT v then a else x))
+expandVariable :: Data a => Pred -> Pred -> a -> a
+expandVariable v a = everywhere (mkT (\x -> if x == v then a else x))
 
 -- | Create a new variable binding, making sure all bound variables in
 -- are expanded in the resulting map.
-bind :: Name -> Pred -> Map Name Pred -> Map Name Pred
-bind v a mp =
+bind :: Pred -> Pred -> Map Pred Pred -> Map Pred Pred
+bind v@(VarT _) a mp =
     -- First, expand all occurrences of the new variable in existing bindings
     let mp' = expandVariable v a mp in
     -- Next, expand all bound variables in the new binding
