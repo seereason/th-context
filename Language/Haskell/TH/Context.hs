@@ -27,13 +27,15 @@ module Language.Haskell.TH.Context
 
 import Control.Lens (view)
 import Control.Monad (filterM)
-import Control.Monad.State (modify, execStateT, StateT)
+import Control.Monad.State (execStateT)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
 import Control.Monad.Writer (MonadWriter, tell)
-import Data.Generics (Data, everywhere, mkT)
+import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
-import Data.Map as Map (elems, insert, insertWithKey, lookup, Map)
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Logic.ATP.TH (expandBindings {-instance Unify [Type]-})
+import Data.Logic.ATP.Unif (Unify(unify))
+import Data.Map as Map (elems, insert, lookup, Map)
+import Data.Maybe (mapMaybe)
 import Debug.Trace (trace)
 import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
@@ -129,45 +131,9 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- expansion, variable substitution, elimination of vacuous
 -- predicates, and unification.
 testContext :: ContextM m => [Pred] -> m Bool
-testContext context = and <$> (execStateT (unifyContext context) mempty >>= \mp -> mapM consistent (expandMappings mp context))
+testContext context = and <$> (execStateT (unify context) mempty >>= \mp -> mapM consistent (everywhere (mkT (expandBindings mp)) context))
 
--- | Unify a list of predicates, expanding all equate predicates.
-unifyContext :: Monad m => [Pred] -> StateT (Map Pred Pred) m ()
-unifyContext (AppT (AppT EqualityT a@(VarT _)) b : more) = modify (bind a b) >> unifyContext more
-unifyContext (AppT (AppT EqualityT a) b@(VarT _) : more) = modify (bind b a) >> unifyContext more
-unifyContext (AppT (AppT EqualityT a) b : more) | a == b = unifyContext more
-unifyContext (AppT (AppT EqualityT (AppT a b)) (AppT c d) : more) =
-    -- I'm told this is incorrect in the presence of type functions
-    unifyContext (AppT (AppT EqualityT a) c : AppT (AppT EqualityT b) d : more)
-unifyContext (_ : more) = unifyContext more
-unifyContext [] = return ()
-
-expandMappings :: Data a => Map Pred Pred -> a -> a
-expandMappings mp a =
-    everywhere (mkT (\x -> case x of
-                             v@(VarT _) -> fromMaybe x (Map.lookup v mp)
-                             _ -> x)) a
-
-expandVariable :: Data a => Pred -> Pred -> a -> a
-expandVariable v a = everywhere (mkT (\x -> if x == v then a else x))
-
--- | Create a new variable binding, making sure all bound variables in
--- are expanded in the resulting map.
-bind :: Pred -> Pred -> Map Pred Pred -> Map Pred Pred
-bind v@(VarT _) a mp =
-    -- First, expand all occurrences of the new variable in existing bindings
-    let mp' = expandVariable v a mp in
-    -- Next, expand all bound variables in the new binding
-    let a' = expandMappings mp' a in
-    -- Does this introduce any recursive bindings?
-    let a'' = expandVariable v (error $ "Recursive binding of " ++ show v) a' in
-    -- If the value is already bound, make sure the binding is identical
-    Map.insertWithKey (\v' a1 a2 ->
-                           if a1 == a2
-                           then a1
-                           else error ("Conflicting definitions of " ++ show v' ++ ":\n  " ++ show a1 ++ "\n  " ++ show a2)) v a'' mp'
-
--- | Decide whether a predicate returned by 'unifyContext' is
+-- | Decide whether a predicate returned by 'unify' is
 -- consistent with the accumulated context.  Use recursive calls to
 -- reifyInstancesWithContext when we encounter a class name applied to
 -- a list of type parameters.

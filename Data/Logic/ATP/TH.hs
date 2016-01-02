@@ -5,12 +5,14 @@
 -- but there is no disjunction operation, nor any derived from it like
 -- implication or equivalence.
 
-{-# LANGUAGE CPP, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, TypeFamilies #-}
+{-# LANGUAGE CPP, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, TypeFamilies, UndecidableInstances #-}
 module Data.Logic.ATP.TH
     ( unfoldApply
+    , expandBindings
     ) where
 
 import Control.Monad.State (modify)
+import Data.Generics (everywhere, mkT)
 import Data.List (intersperse)
 import Data.Logic.ATP (IsAtom, IsVariable(..), IsFunction, IsPredicate, HasEquate(..))
 import Data.Logic.ATP.Apply (HasApply(PredOf, TermOf, applyPredicate, foldApply', overterms, onterms))
@@ -20,7 +22,8 @@ import Data.Logic.ATP.Pretty (hcat, HasFixity(..), Pretty(pPrint), text)
 import Data.Logic.ATP.Prop (IsPropositional(..))
 import Data.Logic.ATP.Term (IsTerm(..))
 import Data.Logic.ATP.Unif (Unify(unify, UTermOf), unify_literals)
-import Data.Map as Map (insert)
+import Data.Map as Map (insertWithKey, lookup, Map)
+import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.String (IsString(fromString))
 import Language.Haskell.TH
@@ -138,18 +141,40 @@ instance IsPropositional Context where
     foldPropositional' = error "foldPropositional'"
     foldCombination = error "foldCombination"
 
--- Unify a (concrete) type with a predicate type, such @Ord a@.
-instance (TVarOf Type ~ Type, TermOf Type ~ Type) => Unify (Type, Type) where
-    type UTermOf (Type, Type) = TermOf Type
-    unify (AppT a b, AppT c d) = unify (a, c) >> unify (b, d)
-    unify (a@(VarT _), b) = modify (Map.insert a b)
-    unify (a, b@(VarT _)) = modify (Map.insert b a)
-    unify (a, b) | a == b = return ()
-    unify (a, b) = fail $ "Cannot unify: (" ++ pprint' a ++ ", " ++ pprint' b ++ ")"
-    -- unify (typ, cxt) = error $ "Unimplemented: unify (" ++ pprint' typ ++ " :: Type, " ++ pprint' cxt ++ " :: Type)"
+instance Unify Type where
+    type UTermOf Type = TermOf Type
+    unify (AppT (AppT EqualityT a@(VarT _)) b) = modify (bind a b)
+    unify (AppT (AppT EqualityT a) b@(VarT _)) = modify (bind b a)
+    unify (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
+        -- I'm told this is incorrect in the presence of type functions
+        unify (AppT (AppT EqualityT a) c) >> unify (AppT (AppT EqualityT b) d)
+    unify (AppT (AppT EqualityT a) b) | a == b = return ()
+    unify (AppT (AppT EqualityT a) b) = fail $ "Cannot unify: (" ++ pprint' a ++ ", " ++ pprint' b ++ ")"
+    unify _ = return ()
 
--- Unify a (concrete) type with a set of context, resulting in a map
--- of variable assignments.
-instance (TVarOf Type ~ Type, TermOf Type ~ Type) => Unify (Type, [Type]) where
-    type UTermOf (Type, [Type]) = TermOf Type
-    unify (typ, cxt) = error $ "Unimplemented: unify (" ++ pprint' typ ++ " :: Type, " ++ pprint' cxt ++ " :: [Type])"
+instance Unify [Type] where
+    type UTermOf [Type] = TermOf Type
+    unify = mapM_ unify
+
+-- | Create a new variable binding, making sure all bound variables in
+-- are expanded in the resulting map.
+bind :: Pred -> Pred -> Map Pred Pred -> Map Pred Pred
+bind v@(VarT _) a mp =
+    -- First, expand all occurrences of the new variable in existing bindings
+    let mp' = everywhere (mkT (expandBinding v a)) mp in
+    -- Next, expand all bound variables in the new binding
+    let a' = everywhere (mkT (expandBindings mp')) a in
+    -- Does this introduce any recursive bindings?
+    let a'' = everywhere (mkT (expandBinding v (error $ "Recursive binding of " ++ show v))) a' in
+    -- If the value is already bound, make sure the binding is identical
+    Map.insertWithKey (\v' a1 a2 ->
+                           if a1 == a2
+                           then a1
+                           else error ("Conflicting definitions of " ++ show v' ++ ":\n  " ++ show a1 ++ "\n  " ++ show a2)) v a'' mp'
+
+expandBindings :: Map Pred Pred -> Pred -> Pred
+expandBindings mp x@(VarT _) = fromMaybe x (Map.lookup x mp)
+expandBindings _ x = x
+
+expandBinding :: Pred -> Pred -> Pred -> Pred
+expandBinding v a x = if x == v then a else x
