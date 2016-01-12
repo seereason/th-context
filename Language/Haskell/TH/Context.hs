@@ -33,7 +33,7 @@ import Control.Monad.Writer (MonadWriter, tell)
 import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
 import Data.Logic.ATP.TH (expandBindings {-instance Unify [Type]-})
-import Data.Logic.ATP.Unif (Unify(unify))
+import Data.Logic.ATP.Unif (Unify(unify'), unify)
 import Data.Map as Map (elems, insert, lookup, Map)
 import Data.Maybe (mapMaybe)
 import Debug.Trace (trace)
@@ -131,7 +131,7 @@ testInstance _ _ x = error $ "qReifyInstances returned something that doesn't ap
 -- expansion, variable substitution, elimination of vacuous
 -- predicates, and unification.
 testContext :: ContextM m => [Pred] -> m Bool
-testContext context = and <$> (execStateT (unify context) mempty >>= \mp -> mapM consistent (everywhere (mkT (expandBindings mp)) context))
+testContext context = and <$> (unify context mempty >>= \mp -> mapM consistent (everywhere (mkT (expandBindings mp)) context))
 
 -- | Decide whether a predicate returned by 'unify' is
 -- consistent with the accumulated context.  Use recursive calls to

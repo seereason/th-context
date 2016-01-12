@@ -21,7 +21,7 @@ import Data.Logic.ATP.Lit (IsLiteral(..), JustLiteral)
 import Data.Logic.ATP.Pretty (hcat, HasFixity(..), Pretty(pPrint), text)
 import Data.Logic.ATP.Prop (IsPropositional(..))
 import Data.Logic.ATP.Term (IsTerm(..))
-import Data.Logic.ATP.Unif (Unify(unify, UTermOf), unify_literals)
+import Data.Logic.ATP.Unif (Unify(UTermOf, unify'), unify_literals)
 import Data.Map as Map (insertWithKey, lookup, Map)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
@@ -143,18 +143,18 @@ instance IsPropositional Context where
 
 instance Unify Type where
     type UTermOf Type = TermOf Type
-    unify (AppT (AppT EqualityT a@(VarT _)) b) = modify (bind a b)
-    unify (AppT (AppT EqualityT a) b@(VarT _)) = modify (bind b a)
-    unify (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
+    unify' (AppT (AppT EqualityT a@(VarT _)) b) = modify (bind a b)
+    unify' (AppT (AppT EqualityT a) b@(VarT _)) = modify (bind b a)
+    unify' (AppT (AppT EqualityT (AppT a b)) (AppT c d)) =
         -- I'm told this is incorrect in the presence of type functions
-        unify (AppT (AppT EqualityT a) c) >> unify (AppT (AppT EqualityT b) d)
-    unify (AppT (AppT EqualityT a) b) | a == b = return ()
-    unify (AppT (AppT EqualityT a) b) = fail $ "Cannot unify: (" ++ pprint' a ++ ", " ++ pprint' b ++ ")"
-    unify _ = return ()
+        unify' (AppT (AppT EqualityT a) c) >> unify' (AppT (AppT EqualityT b) d)
+    unify' (AppT (AppT EqualityT a) b) | a == b = return ()
+    unify' (AppT (AppT EqualityT a) b) = fail $ "Cannot unify: (" ++ pprint' a ++ ", " ++ pprint' b ++ ")"
+    unify' _ = return ()
 
 instance Unify [Type] where
     type UTermOf [Type] = TermOf Type
-    unify = mapM_ unify
+    unify' = mapM_ unify'
 
 -- | Create a new variable binding, making sure all bound variables in
 -- are expanded in the resulting map.

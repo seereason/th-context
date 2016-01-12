@@ -90,7 +90,7 @@ tests = do
   it "knows variables with different names unify" $ do
      let a = mkName "a"
          b = mkName "b"
-     execStateT (unify (AppT (AppT EqualityT (VarT a)) (VarT b))) mempty `shouldBe` Success (Map.fromList [(VarT a, VarT b)])
+     unify (AppT (AppT EqualityT (VarT a)) (VarT b)) mempty `shouldBe` Success (Map.fromList [(VarT a, VarT b)])
 {-
   it "knows variables are not Eq with other types" $ do
      (E (VarT (mkName "a")) == E (AppT (VarT (mkName "b")) (VarT (mkName "c")))) `shouldBe` False
