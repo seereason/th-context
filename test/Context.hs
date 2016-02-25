@@ -6,7 +6,7 @@ module Context where
 
 import Control.DeepSeq
 import Control.Lens (view)
-import Control.Monad.State (evalStateT, execStateT, runStateT)
+import Control.Monad.State (evalStateT, runStateT)
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Bits
@@ -23,7 +23,7 @@ import Language.Haskell.TH.Context (reifyInstancesWithContext)
 import Language.Haskell.TH.Desugar (withLocalDeclarations)
 import Language.Haskell.TH.Syntax (Lift(lift), Quasi(qReifyInstances))
 import Language.Haskell.TH.TypeGraph.Expand (E(_unE), unE, ExpandMap, expandType)
-import Language.Haskell.TH.TypeGraph.Prelude (pprint')
+import Language.Haskell.TH.TypeGraph.Prelude (pprint1)
 import System.Exit (ExitCode)
 import Test.Hspec hiding (runIO)
 import Test.Hspec.Core.Spec (SpecM)
@@ -48,11 +48,11 @@ tests = do
   -- Test the behavior of th-reify-many
   it "can tell that there is an instance NFData Char" $
      $(do insts <- qReifyInstances ''NFData [ConT ''Char]
-          lift $ List.map pprint' insts) `shouldBe` (["instance NFData Char"] :: [String])
+          lift $ List.map pprint1 insts) `shouldBe` (["instance NFData Char"] :: [String])
 
   it "can tell that there is no instance NFData ExitCode" $
      $(do insts <- qReifyInstances ''NFData [ConT ''ExitCode]
-          lift $ List.map pprint' insts) `shouldBe` ([] :: [String])
+          lift $ List.map pprint1 insts) `shouldBe` ([] :: [String])
 {-
   it "can tell that an instance hasn't been declared" $
      $(missingInstances simpleMissingInstanceTest [d|instance NFData ExitCode|] >>= lift . List.null)

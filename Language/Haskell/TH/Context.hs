@@ -42,7 +42,7 @@ import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.TypeGraph.Expand (ExpandMap, expandType, E, unE)
-import Language.Haskell.TH.TypeGraph.Prelude (pprint')
+import Language.Haskell.TH.TypeGraph.Prelude (pprint1)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
 -- FIXME: Should actually be Map (E Pred) (Maybe (DecStatus
@@ -94,8 +94,8 @@ reifyInstancesWithContext className typeParameters = do
       r <- filterM (testInstance className typeParameters) insts
 #ifdef DEBUG
       trace (intercalate ("\n" ++ pre ++ "    ")
-                         ((pre ++ "reifyInstancesWithContext " ++ pprint' (foldInstance className typeParameters) ++ " -> [") :
-                          map (\(InstanceD _ typ _) -> pprint' typ) r) ++
+                         ((pre ++ "reifyInstancesWithContext " ++ pprint1 (foldInstance className typeParameters) ++ " -> [") :
+                          map (\(InstanceD _ typ _) -> pprint1 typ) r) ++
                          "]") (return ())
 #endif
       -- Now insert the correct value into the map and return it.  Because

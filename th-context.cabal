@@ -1,5 +1,5 @@
 name:               th-context
-version:            0.23
+version:            0.23.1
 cabal-version:      >= 1.10
 build-type:         Simple
 license:            BSD3
@@ -39,7 +39,7 @@ Library
     template-haskell >= 2.10,
     th-desugar,
     th-orphans >= 0.10.0,
-    th-typegraph >= 0.31
+    th-typegraph >= 0.33.1
   if impl(ghcjs)
     build-depends: microlens-compat
   else

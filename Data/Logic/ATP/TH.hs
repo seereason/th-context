@@ -28,7 +28,7 @@ import Data.Monoid ((<>))
 import Data.String (IsString(fromString))
 import Language.Haskell.TH
 import Language.Haskell.TH.PprLib (to_HPJ_Doc)
-import Language.Haskell.TH.TypeGraph.Prelude (pprint')
+import Language.Haskell.TH.TypeGraph.Prelude (pprint1)
 
 newtype Context = Context [Type] deriving (Eq, Ord, Show)
 
@@ -149,7 +149,7 @@ instance Unify Type where
         -- I'm told this is incorrect in the presence of type functions
         unify' (AppT (AppT EqualityT a) c) >> unify' (AppT (AppT EqualityT b) d)
     unify' (AppT (AppT EqualityT a) b) | a == b = return ()
-    unify' (AppT (AppT EqualityT a) b) = fail $ "Cannot unify: (" ++ pprint' a ++ ", " ++ pprint' b ++ ")"
+    unify' (AppT (AppT EqualityT a) b) = fail $ "Cannot unify: (" ++ pprint1 a ++ ", " ++ pprint1 b ++ ")"
     unify' _ = return ()
 
 instance Unify [Type] where

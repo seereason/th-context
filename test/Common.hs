@@ -14,7 +14,7 @@ import Language.Haskell.TH.Context (ContextM, DecStatus(Declared, Undeclared), I
 import Language.Haskell.TH.Desugar (DsMonad)
 import Language.Haskell.TH.TypeGraph.Edges (GraphEdges)
 import Language.Haskell.TH.TypeGraph.Expand (ExpandMap)
-import Language.Haskell.TH.TypeGraph.Prelude (pprint')
+import Language.Haskell.TH.TypeGraph.Prelude (pprint1)
 import Language.Haskell.TH.TypeGraph.Vertex (TypeGraphVertex(..), TGV)
 
 data SetDifferences a = SetDifferences {unexpected :: Set a, missing :: Set a} deriving (Eq, Ord, Show)
@@ -33,27 +33,27 @@ unReifyName = mkName . nameBase
 -- Some very nasty bug is triggered here in ghc-7.8 if we try to implement
 -- a generic function that unReifies the symbols.  Ghc-7.10 works fine
 
--- pprint'' :: (Data a, Ppr a) => a -> String
--- pprint'' = pprint' . unReify
+-- pprint' :: (Data a, Ppr a) => a -> String
+-- pprint' = pprint1 . unReify
 
 pprintDec :: Dec -> String
-pprintDec = pprint' . unReify
+pprintDec = pprint1 . unReify
 
 pprintDec' :: DecStatus Dec -> String
-pprintDec' (Undeclared x) = "Undeclared (" ++ pprint' (unReify x) ++ ")"
-pprintDec' (Declared x) = "Declared (" ++ pprint' (unReify x) ++ ")"
+pprintDec' (Undeclared x) = "Undeclared (" ++ pprint1 (unReify x) ++ ")"
+pprintDec' (Declared x) = "Declared (" ++ pprint1 (unReify x) ++ ")"
 
 pprintType :: Type -> String
-pprintType = pprint' . unReify
+pprintType = pprint1 . unReify
 
 pprintVertex :: (Ppr v, Data v, TypeGraphVertex v) => v -> String
-pprintVertex = pprint'
+pprintVertex = pprint1
 
 pprintPred :: Pred -> String
-pprintPred = pprint' . unReify
+pprintPred = pprint1 . unReify
 
 edgesToStrings :: (Ppr key, Data key) => GraphEdges key -> [(String, [String])]
-edgesToStrings mp = List.map (\ (t, ts) -> (pprint' t, map pprint' (Set.toList ts))) (Map.toList mp)
+edgesToStrings mp = List.map (\ (t, ts) -> (pprint1 t, map pprint1 (Set.toList ts))) (Map.toList mp)
 
 data S
     = S { _instMap :: InstMap
