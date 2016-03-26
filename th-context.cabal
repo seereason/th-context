@@ -33,6 +33,7 @@ Library
     containers,
     data-default,
     haskell-src-exts,
+    lens,
     mtl,
     mtl-unleashed >= 0.5,
     syb,
@@ -40,10 +41,6 @@ Library
     th-desugar,
     th-orphans >= 0.10.0,
     th-typegraph >= 0.33.1
-  if impl(ghcjs)
-    build-depends: microlens-compat
-  else
-    build-depends: lens
 
 test-suite th-context-tests
   type:             exitcode-stdio-1.0
@@ -61,6 +58,7 @@ test-suite th-context-tests
     ghc-prim,
     hspec,
     hspec-core,
+    lens,
     mtl,
     mtl-unleashed >= 0.5,
     syb,
@@ -72,10 +70,6 @@ test-suite th-context-tests
     th-reify-many,
     th-typegraph
   default-language: Haskell2010
-  if impl(ghcjs)
-    build-depends: microlens-compat
-  else
-    build-depends: lens
 
 source-repository head
   type:     git
