@@ -28,7 +28,7 @@ Library
     Data.Logic.ATP.TH
     Language.Haskell.TH.Context
   build-depends:
-    atp-haskell,
+    atp-haskell >= 1.14,
     base >= 4.8 && < 5,
     containers,
     data-default,

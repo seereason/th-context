@@ -141,7 +141,7 @@ instance IsPropositional Context where
     foldPropositional' = error "foldPropositional'"
     foldCombination = error "foldCombination"
 
-instance Unify Type where
+instance Monad m => Unify m Type where
     type UTermOf Type = TermOf Type
     unify' (AppT (AppT EqualityT a@(VarT _)) b) = modify (bind a b)
     unify' (AppT (AppT EqualityT a) b@(VarT _)) = modify (bind b a)
@@ -152,7 +152,7 @@ instance Unify Type where
     unify' (AppT (AppT EqualityT a) b) = fail $ "Cannot unify: (" ++ pprint1 a ++ ", " ++ pprint1 b ++ ")"
     unify' _ = return ()
 
-instance Unify [Type] where
+instance Monad m => Unify m [Type] where
     type UTermOf [Type] = TermOf Type
     unify' = mapM_ unify'
 
