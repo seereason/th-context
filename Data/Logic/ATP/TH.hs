@@ -28,7 +28,7 @@ import Data.Monoid ((<>))
 import Data.String (IsString(fromString))
 import Language.Haskell.TH
 import Language.Haskell.TH.PprLib (to_HPJ_Doc)
-import Language.Haskell.TH.TypeGraph.Prelude (pprint1)
+import Language.Haskell.TH.Expand (pprint1)
 
 newtype Context = Context [Type] deriving (Eq, Ord, Show)
 

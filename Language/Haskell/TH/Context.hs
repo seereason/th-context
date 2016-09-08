@@ -41,8 +41,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Desugar as DS (DsMonad)
 import Language.Haskell.TH.PprLib (cat, ptext)
 import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.TH.TypeGraph.Expand (ExpandMap, expandType, E, unE)
-import Language.Haskell.TH.TypeGraph.Prelude (pprint1)
+import Language.Haskell.TH.Expand (ExpandMap, expandType, E, unE)
 import Language.Haskell.TH.Instances ({- Ord instances from th-orphans -})
 
 -- FIXME: Should actually be Map (E Pred) (Maybe (DecStatus
@@ -189,16 +188,34 @@ unfoldInstance (ConT name) = Just (name, [])
 unfoldInstance (AppT t1 t2) = maybe Nothing (\ (name, types) -> Just (name, types ++ [t2])) (unfoldInstance t1)
 unfoldInstance _ = Nothing
 
-noInstance :: ContextM m => Name -> Name -> m Bool
+noInstance :: forall m. ContextM m => Name -> Name -> m Bool
+noInstance className typeName =
+    null <$> reifyInstancesWithContext className [ConT typeName]
+#if 0
+    qReify typeName >>= doInfo >>= \typ -> null <$> reifyInstancesWithContext className [typ]
+    where
+      doInfo :: Info -> m Type
+      doInfo (TyConI dec) = doDec dec
+      doDec :: Dec -> m Type
+      doDec (NewtypeD cxt name tvbs con decs) = doDec (DataD cxt name tvbs [con] decs)
+      doDec (DataD _cxt name tvbs _cons _decs) = return $ foldl AppT (ConT name) (map (VarT . toName) tvbs)
+      doDec (TySynD name tvbs typ) = return $ foldl AppT (ConT name) (map (VarT . toName) tvbs)
+      toName (PlainTV x) = x
+      toName (KindedTV x _) = x
+#endif
+#if 0
 noInstance className typeName = do
   i <- qReify typeName
   typ <- case i of
+           TyConI (TySynD _name _tvbs typ) ->
+               
            TyConI (DataD _cxt _name tvbs _fundeps _decs) ->
                do vs <- mapM (\c -> VarT <$> runQ (newName [c])) (take (length tvbs) ['a'..'z'])
                   return $ foldl AppT (ConT typeName) vs
-           _ -> error "haven't thought about what happens here"
+           _ -> error $ "noInstance - " ++ show typeName ++ " has an invalid type: " ++ show i
   r <- null <$> reifyInstancesWithContext className [typ]
 #ifdef DEBUG
   trace ("noInstance " ++ show className ++ " " ++ show typeName ++ " -> " ++ show r) (return ())
 #endif
   return r
+#endif
