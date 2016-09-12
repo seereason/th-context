@@ -1,5 +1,5 @@
 name:               th-context
-version:            0.23.1
+version:            0.24
 cabal-version:      >= 1.10
 build-type:         Simple
 license:            BSD3
