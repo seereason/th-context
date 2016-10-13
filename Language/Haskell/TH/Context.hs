@@ -109,7 +109,13 @@ reifyInstancesWithContext className typeParameters = do
 -- for the class and argument types, we now need to unify those with the
 -- type returned by the instance and generate some EqualP predicates.
 testInstance :: ContextM m => Name -> [Type] -> InstanceDec -> m Bool
-testInstance className typeParameters (InstanceD instanceContext instanceType _) = do
+testInstance className typeParameters
+#if MIN_VERSION_template_haskell(2,11,0)
+                 (InstanceD Nothing instanceContext instanceType _)
+#else
+                 (InstanceD instanceContext instanceType _)
+#endif
+                     = do
   -- The new context consists of predicates derived by unifying the
   -- type parameters with the instance type, plus the prediates in the
   -- instance context field.
@@ -150,7 +156,11 @@ consistent typ =
 -- parameters) will be considered part of the context for subsequent
 -- calls to reifyInstancesWithContext.
 tellInstance :: ContextM m => Dec -> m ()
+#if MIN_VERSION_template_haskell(2,11,0)
+tellInstance inst@(InstanceD _ _ instanceType _) =
+#else
 tellInstance inst@(InstanceD _ instanceType _) =
+#endif
     do let Just (className, typeParameters) = unfoldInstance instanceType
        p <- expandType $ foldInstance className typeParameters
        (mp :: InstMap) <- getPoly
