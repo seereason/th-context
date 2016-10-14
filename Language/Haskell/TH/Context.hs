@@ -27,9 +27,10 @@ module Language.Haskell.TH.Context
 
 import Control.Lens (view)
 import Control.Monad (filterM)
+import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (execStateT)
 import Control.Monad.States (MonadStates, getPoly, modifyPoly)
-import Control.Monad.Writer (MonadWriter, tell)
+import Control.Monad.Writer (MonadWriter, tell, WriterT)
 import Data.Generics (everywhere, mkT)
 import Data.List (intercalate)
 import Data.Logic.ATP.TH (expandBindings {-instance Unify [Type]-})
@@ -53,6 +54,9 @@ type InstMap = Map (E Pred) [DecStatus InstanceDec]
 -- state to record declared instances, type expansions, and a string
 -- for debugging messages.
 class (DsMonad m, MonadStates InstMap m, MonadStates ExpandMap m, MonadStates String m) => ContextM m
+
+instance ContextM m => ContextM (ReaderT r m)
+instance (ContextM m, Monoid w) => ContextM (WriterT w m)
 
 -- | Did we get this instance from the Q monad or does it still need to be spliced?
 data DecStatus a
