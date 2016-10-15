@@ -115,7 +115,7 @@ reifyInstancesWithContext className typeParameters = do
 testInstance :: ContextM m => Name -> [Type] -> InstanceDec -> m Bool
 testInstance className typeParameters
 #if MIN_VERSION_template_haskell(2,11,0)
-                 (InstanceD Nothing instanceContext instanceType _)
+                 (InstanceD _ instanceContext instanceType _)
 #else
                  (InstanceD instanceContext instanceType _)
 #endif
